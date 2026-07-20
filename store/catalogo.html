@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Catalogo online GRIFFY STORE conectado ao estoque da loja." />
+    <title>Catalogo - GRIFFY STORE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="catalog-page">
+    <div class="promo-bar" id="promoBar" hidden>
+      <div class="container promo-inner">
+        <div><strong id="promoTitle">Promocao Griffy Store</strong><span id="promoText">Ofertas especiais por tempo limitado.</span></div>
+        <a class="btn primary compact" id="promoLink" href="./catalogo.html">Ver ofertas</a>
+      </div>
+    </div>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="./index.html" aria-label="GRIFFY STORE">
+          <img src="./assets/logo-lovable.png" alt="GRIFFY STORE" />
+        </a>
+        <nav>
+          <a href="./index.html">Inicio</a>
+          <a href="./catalogo.html" class="active">Catalogo</a>
+          <a href="./index.html#acessorios">Acessorios</a>
+          <a href="./index.html#assistencia">Assistencia</a>
+          <a href="./index.html#contato">Contato</a>
+        </nav>
+        <div class="header-actions">
+          <a class="admin-link" href="./admin.html">Administrador</a>
+          <a class="btn primary compact" id="headerWhatsapp" href="#">WhatsApp</a>
+          <button class="cart-button" id="cartButton" type="button">Carrinho <span id="cartCount">0</span></button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="catalog-shell">
+        <div class="container">
+          <div class="catalog-toolbar">
+            <input id="searchInput" placeholder="Buscar produtos..." />
+            <select id="sortSelect">
+              <option value="featured">Destaques</option>
+              <option value="name">Nome A-Z</option>
+              <option value="price-asc">Menor preco</option>
+              <option value="price-desc">Maior preco</option>
+              <option value="stock-desc">Mais estoque</option>
+            </select>
+          </div>
+
+          <div class="filter-row">
+            <select id="categorySelect" aria-label="Categoria">
+              <option value="">Todas categorias</option>
+            </select>
+            <div class="category-chips" id="categoryChips"></div>
+          </div>
+
+          <div class="catalog-meta">
+            <p class="muted-count" id="productCount">Carregando produtos...</p>
+            <button class="link-button" id="clearFilters" type="button">Limpar filtros</button>
+          </div>
+          <div id="productGrid" class="product-grid"></div>
+          <div id="emptyState" class="empty" hidden>Nenhum produto encontrado com esses filtros.</div>
+        </div>
+      </section>
+    </main>
+
+    <aside class="drawer" id="drawer" aria-hidden="true">
+      <div class="drawer-head">
+        <h2>Carrinho</h2>
+        <button id="closeCart" type="button">Fechar</button>
+      </div>
+      <div id="cartItems" class="cart-items"></div>
+      <form id="orderForm" class="order-form">
+        <label>Nome<input name="customerName" required /></label>
+        <label>Telefone<input name="customerPhone" required /></label>
+        <label>Entrega
+          <select name="deliveryType">
+            <option>Retirada</option>
+            <option>Entrega</option>
+          </select>
+        </label>
+        <label>Endereco<textarea name="address" placeholder="Opcional para retirada"></textarea></label>
+        <label>Observacao<textarea name="notes" placeholder="Opcional"></textarea></label>
+        <div class="cart-total"><span>Total</span><strong id="cartTotal">R$ 0,00</strong></div>
+        <button class="btn primary" type="submit">Enviar pedido</button>
+        <button class="btn ghost" id="whatsappCart" type="button">Enviar pelo WhatsApp</button>
+      </form>
+    </aside>
+    <a class="whatsapp-fab" id="serviceWhatsapp" href="#" aria-label="Falar no WhatsApp">W</a>
+    <div class="overlay" id="overlay"></div>
+
+    <script src="./config.js"></script>
+    <script src="./store.js"></script>
+  </body>
+</html>

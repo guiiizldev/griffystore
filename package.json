@@ -1,0 +1,62 @@
+{
+  "name": "griffy-store-desktop",
+  "version": "0.2.0",
+  "description": "Sistema desktop da Griffy Store com PDV, estoque, assistencia tecnica e MySQL.",
+  "author": "Griffy Store",
+  "main": "src/electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build:win": "electron-builder --win nsis",
+    "build:portable": "electron-builder --win dir",
+    "web:build": "npm install --prefix store-app && npm run build --prefix store-app",
+    "web:start": "node src/server/public.js",
+    "db:schema": "node src/server/schema.js",
+    "db:export:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/export-local-db.ps1",
+    "db:import:vps": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/import-db-to-vps.ps1",
+    "db:config": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/configure-db.ps1",
+    "import:stock": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/import-stock-xlsx.ps1",
+    "cleanup:categories": "node scripts/cleanup-categories.js",
+    "check": "node --check app.js && node --check src/electron/main.js && node --check src/server/api.js && node --check src/server/database.js && node --check src/server/fiscal.js && node --check src/server/schema.js && node --check src/server/public.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mysql2": "^3.11.5"
+  },
+  "devDependencies": {
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "br.com.griffystore.sistema",
+    "productName": "Griffy Store",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "styles.css",
+      "app.js",
+      ".env",
+      ".env.example",
+      "assets/**/*",
+      "store/**/*",
+      "store-app/dist/**/*",
+      "database/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/griffy-icon.ico",
+      "target": "nsis",
+      "artifactName": "Griffy-Store-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Admin do site - GRIFFY STORE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="admin-page">
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="./index.html" aria-label="GRIFFY STORE">
+          <img src="./assets/logo-lovable.png" alt="GRIFFY STORE" />
+        </a>
+        <nav>
+          <a href="./index.html">Inicio</a>
+          <a href="./catalogo.html">Catalogo</a>
+          <a href="./admin.html" class="active">Administrador</a>
+        </nav>
+        <div class="header-actions">
+          <a class="btn primary compact" href="./catalogo.html">Ver site</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="admin-main">
+      <section class="container admin-grid">
+        <div>
+          <span class="section-kicker">Administracao do site</span>
+          <h1>Painel da loja virtual</h1>
+          <p>Controle tema, campanha promocional e dados exibidos no site. Os produtos continuam sendo gerenciados pelo sistema Griffy Store.</p>
+        </div>
+
+        <form class="admin-card" id="siteAdminForm">
+          <div class="form-section">
+            <h2>Acesso</h2>
+            <label>PIN do administrador<input name="adminPin" type="password" required autocomplete="current-password" /></label>
+          </div>
+
+          <div class="form-section">
+            <h2>Tema</h2>
+            <label>Tema ativo
+              <select name="theme">
+                <option value="auto">Automatico por data</option>
+                <option value="default">Padrao Griffy</option>
+                <option value="black-friday">Black Friday</option>
+                <option value="natal">Natal</option>
+                <option value="namorados">Dia dos Namorados</option>
+                <option value="maes">Dia das Maes</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="form-section">
+            <h2>Promocao</h2>
+            <label class="switch-row"><input name="promoEnabled" type="checkbox" /> Mostrar barra promocional</label>
+            <label>Titulo<input name="promoTitle" placeholder="Semana do iPhone" /></label>
+            <label>Texto<textarea name="promoText" placeholder="Ofertas especiais por tempo limitado."></textarea></label>
+            <div class="split-fields">
+              <label>Texto do botao<input name="promoButtonText" placeholder="Ver ofertas" /></label>
+              <label>Destino do botao<input name="promoTarget" placeholder="./catalogo.html" /></label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h2>Contato</h2>
+            <div class="split-fields">
+              <label>WhatsApp<input name="whatsapp" placeholder="5521979834256" /></label>
+              <label>Instagram<input name="instagram" placeholder="https://instagram.com/..." /></label>
+            </div>
+            <label>Endereco<textarea name="address" placeholder="Rua, numero, bairro, cidade"></textarea></label>
+          </div>
+
+          <div class="admin-actions">
+            <span id="adminStatus"></span>
+            <button class="btn primary" type="submit">Salvar configuracoes</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <script src="./config.js"></script>
+    <script src="./admin.js"></script>
+  </body>
+</html>
