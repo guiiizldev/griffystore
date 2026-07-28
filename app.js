@@ -160,6 +160,8 @@ let lastCloseReport = null;
 let appInfo = { version: "" };
 let updateInfo = null;
 let notifications = [];
+let renderScheduled = false;
+let afterRenderTasks = [];
 
 const documentTypes = [
   "Nota de compra de aparelho",
@@ -2449,8 +2451,9 @@ function setUi(id, value, shouldRender = true) {
   ui[id] = value;
   if (!shouldRender) return;
   render();
-  const element = document.getElementById(id);
-  if (element) {
+  afterRender(() => {
+    const element = document.getElementById(id);
+    if (!element) return;
     element.focus();
     if (typeof element.setSelectionRange === "function") {
       const end = String(value).length;
@@ -2460,7 +2463,7 @@ function setUi(id, value, shouldRender = true) {
         // Numeric inputs can reject selection ranges.
       }
     }
-  }
+  });
 }
 
 function roleNameLegacy(role) {
@@ -3227,7 +3230,19 @@ async function runApiSave(path, payload, method = "POST") {
 }
 
 function render() {
-  document.getElementById("app").innerHTML = app();
+  if (renderScheduled) return;
+  renderScheduled = true;
+  requestAnimationFrame(() => {
+    renderScheduled = false;
+    document.getElementById("app").innerHTML = app();
+    const tasks = afterRenderTasks;
+    afterRenderTasks = [];
+    tasks.forEach((task) => task());
+  });
+}
+
+function afterRender(task) {
+  afterRenderTasks.push(task);
 }
 
 boot();

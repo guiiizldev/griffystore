@@ -376,6 +376,15 @@ function fetchJson(url) {
   });
 }
 
+function groupBy(rows, key) {
+  return rows.reduce((map, row) => {
+    const value = row[key];
+    if (!map.has(value)) map.set(value, []);
+    map.get(value).push(row);
+    return map;
+  }, new Map());
+}
+
 async function snapshot() {
   const activeShiftRows = await query("SELECT * FROM cash_shifts WHERE status = 'open' ORDER BY opened_at DESC LIMIT 1");
   const activeShift = activeShiftRows[0] || null;
@@ -384,7 +393,7 @@ async function snapshot() {
     : "SELECT id, shift_id, type, description, amount, movement_date AS date, operator FROM cash_movements WHERE 1 = 0";
   const movementParams = activeShift ? { shiftId: activeShift.id } : {};
 
-  const [categories, permissions, settings, users, products, repairParts, repairPartMovements, customers, services, serviceEvents, documents, sales, items, payments, movements, historyMovements, shifts] = await Promise.all([
+  const [categories, permissions, settings, users, products, repairParts, repairPartMovements, customers, services, serviceEvents, documents, movements, historyMovements, shifts] = await Promise.all([
     query("SELECT name FROM categories WHERE active = 1 ORDER BY name"),
     query("SELECT role_name AS role, module_key AS module, allowed = 1 AS allowed FROM role_permissions ORDER BY role_name, module_key"),
     query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings ORDER BY setting_key"),
@@ -394,28 +403,39 @@ async function snapshot() {
     query("SELECT m.*, p.name AS part_name FROM repair_part_movements m LEFT JOIN repair_parts p ON p.id = m.part_id ORDER BY m.movement_date DESC LIMIT 100"),
     query("SELECT id, name, phone, document FROM customers ORDER BY name"),
     query("SELECT * FROM services ORDER BY opened_at DESC"),
-    query("SELECT * FROM service_events ORDER BY event_date ASC, id ASC"),
+    query("SELECT * FROM service_events ORDER BY event_date DESC, id DESC LIMIT 1200"),
     query("SELECT * FROM purchase_documents ORDER BY document_date DESC, created_at DESC"),
-    query("SELECT * FROM sales ORDER BY created_at ASC"),
-    query("SELECT * FROM sale_items ORDER BY id ASC"),
-    query("SELECT * FROM sale_payments ORDER BY id ASC"),
     query(movementSql, movementParams),
     query("SELECT id, shift_id, type, description, amount, movement_date AS date, operator FROM cash_movements ORDER BY movement_date DESC LIMIT 1000"),
     query("SELECT * FROM cash_shifts ORDER BY opened_at DESC LIMIT 20"),
   ]);
 
+  const sales = await query("SELECT * FROM sales ORDER BY created_at DESC LIMIT 1200");
+  const saleIds = sales.map((sale) => sale.id);
+  let items = [];
+  let payments = [];
+  if (saleIds.length) {
+    const placeholders = saleIds.map((_, index) => `:saleId${index}`).join(",");
+    const params = saleIds.reduce((acc, id, index) => ({ ...acc, [`saleId${index}`]: id }), {});
+    [items, payments] = await Promise.all([
+      query(`SELECT * FROM sale_items WHERE sale_id IN (${placeholders}) ORDER BY id ASC`, params),
+      query(`SELECT * FROM sale_payments WHERE sale_id IN (${placeholders}) ORDER BY id ASC`, params),
+    ]);
+  }
+  const itemsBySale = groupBy(items, "sale_id");
+  const paymentsBySale = groupBy(payments, "sale_id");
+  const eventsByService = groupBy(serviceEvents, "service_id");
+
   const mappedSales = sales.map(mapSale);
   mappedSales.forEach((sale) => {
-    sale.items = items
-      .filter((item) => item.sale_id === sale.id)
+    sale.items = (itemsBySale.get(sale.id) || [])
       .map((item) => ({
         id: item.product_id,
         name: item.product_name,
         qty: item.qty,
         price: toNumber(item.price),
       }));
-    sale.payments = payments
-      .filter((payment) => payment.sale_id === sale.id)
+    sale.payments = (paymentsBySale.get(sale.id) || [])
       .map((payment) => ({
         method: payment.method,
         amount: toNumber(payment.amount),
@@ -425,8 +445,9 @@ async function snapshot() {
   });
   const mappedServices = services.map(mapService);
   mappedServices.forEach((service) => {
-    service.events = serviceEvents
-      .filter((event) => event.service_id === service.id)
+    service.events = (eventsByService.get(service.id) || [])
+      .slice()
+      .reverse()
       .map((event) => ({
         id: event.id,
         date: event.event_date,
