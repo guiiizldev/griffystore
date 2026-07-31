@@ -72,6 +72,7 @@ appModules.splice(3, 0, { id: "parts", icon: "P", label: "Pecas", title: "Estoqu
 
 const defaultPermissions = {
   admin: appModules.map((module) => module.id),
+  gerente: ["dashboard", "pos", "inventory", "parts", "services", "customers", "purchases", "documents", "operators", "reports", "settings", "backup"],
   vendedor: ["dashboard", "pos", "inventory", "services", "customers", "purchases", "documents", "reports"],
   tecnico: ["dashboard", "pos", "inventory", "parts", "services", "customers", "purchases", "documents", "reports"],
 };
@@ -178,6 +179,7 @@ function loadState() {
   const parsed = JSON.parse(stored);
   parsed.categories = parsed.categories?.length ? parsed.categories : defaultCategories;
   parsed.permissions = parsed.permissions || defaultPermissions;
+  parsed.permissions.gerente = Array.from(new Set([...(parsed.permissions.gerente || []), ...defaultPermissions.gerente]));
   parsed.permissions.vendedor = Array.from(new Set([...(parsed.permissions.vendedor || []), ...defaultPermissions.vendedor]));
   parsed.permissions.tecnico = Array.from(new Set([...(parsed.permissions.tecnico || []), ...defaultPermissions.tecnico]));
   delete parsed.permissions.caixa;
@@ -267,6 +269,10 @@ function enforceCashLoginRules() {
 
 function hasRole(...roles) {
   return session && roles.includes(session.role);
+}
+
+function canDeleteProducts() {
+  return hasRole("admin", "gerente");
 }
 
 function canAccess(moduleId) {
@@ -675,6 +681,7 @@ function inventoryScreen() {
                   <td>
                     <button class="btn" onclick="openModal('product','${p.id}')">Editar</button>
                     <button class="btn" onclick="openModal('stock','${p.id}')">Movimentar</button>
+                    ${canDeleteProducts() ? `<button class="btn danger" onclick="deleteProduct('${p.id}')">Excluir</button>` : ""}
                   </td>
                 </tr>`;
               })
@@ -1068,7 +1075,7 @@ function operatorsScreenAdmin() {
 }
 
 function permissionsScreen() {
-  const editableRoles = ["vendedor", "tecnico"];
+  const editableRoles = ["gerente", "vendedor", "tecnico"];
   const modules = appModules.filter((module) => module.id !== "permissions");
   return `
     <section class="card">
@@ -1325,7 +1332,7 @@ function operatorCanCancelSales() {
 }
 
 function salespeople() {
-  const active = state.users.filter((user) => user.active && ["admin", "vendedor", "tecnico"].includes(user.role));
+  const active = state.users.filter((user) => user.active && ["admin", "gerente", "vendedor", "tecnico"].includes(user.role));
   if (active.some((user) => user.id === session?.id)) return active;
   return session ? [{ ...session, active: true }, ...active] : active;
 }
@@ -2284,6 +2291,7 @@ function operatorForm() {
         <select name="role">
           ${[
             ["admin", "Administrador"],
+            ["gerente", "Gerente"],
             ["vendedor", "Vendedor"],
             ["tecnico", "Tecnico"],
           ]
@@ -2471,7 +2479,7 @@ function roleNameLegacy(role) {
 }
 
 function roleName(role) {
-  return { admin: "Administrador", vendedor: "Vendedor", tecnico: "Tecnico", caixa: "Caixa desativado" }[role] || role;
+  return { admin: "Administrador", gerente: "Gerente", vendedor: "Vendedor", tecnico: "Tecnico", caixa: "Caixa desativado" }[role] || role;
 }
 
 function cashBalance() {
@@ -2785,6 +2793,29 @@ async function saveProduct(event) {
   finishSave();
 }
 
+async function deleteProduct(id) {
+  if (!canDeleteProducts()) {
+    alert("Apenas administrador ou gerente podem excluir produtos.");
+    return;
+  }
+  const product = state.products.find((p) => p.id === id);
+  if (!product) return;
+  if (!confirm(`Excluir o produto ${product.name}? Esta acao nao apaga historico de vendas ja realizadas.`)) return;
+  try {
+    if (apiOnline) {
+      await apiSend(`/products/${id}`, { operator: session.name, operatorRole: session.role }, "DELETE");
+      await reloadState();
+    } else {
+      state.products = state.products.filter((p) => p.id !== id);
+      saveState();
+    }
+    notify("Produto excluido com sucesso.", "success");
+    render();
+  } catch (error) {
+    notify(error.message, inferNotificationType(error.message));
+  }
+}
+
 async function saveRepairPart(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.target));
@@ -2932,7 +2963,7 @@ async function saveOperator(event) {
     return;
   }
   const data = Object.fromEntries(new FormData(event.target));
-  if (!["admin", "vendedor", "tecnico"].includes(data.role)) {
+  if (!["admin", "gerente", "vendedor", "tecnico"].includes(data.role)) {
     alert("Cargo invalido.");
     return;
   }
@@ -2979,7 +3010,7 @@ async function deleteOperator(id) {
 }
 
 async function savePermissions() {
-  const roles = ["vendedor", "tecnico"];
+  const roles = ["gerente", "vendedor", "tecnico"];
   const next = { ...state.permissions, admin: defaultPermissions.admin };
   for (const role of roles) {
     next[role] = Array.from(document.querySelectorAll(`input[data-role="${role}"]:checked`)).map((input) => input.dataset.module);

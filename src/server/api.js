@@ -798,6 +798,20 @@ function createApp(options = {}) {
     res.json(product);
   });
 
+  app.delete("/api/products/:id", async (req, res) => {
+    if (!["admin", "gerente"].includes(req.body.operatorRole)) {
+      res.status(403).json({ error: "Apenas administrador ou gerente podem excluir produtos." });
+      return;
+    }
+    const rows = await query("SELECT id, name FROM products WHERE id = :id LIMIT 1", { id: req.params.id });
+    if (!rows.length) {
+      res.status(404).json({ error: "Produto nao encontrado." });
+      return;
+    }
+    await query("DELETE FROM products WHERE id = :id", { id: req.params.id });
+    res.json({ ok: true, id: req.params.id, name: rows[0].name });
+  });
+
   app.post("/api/products/:id/stock", async (req, res) => {
     const qty = Number(req.body.qty);
     const delta = req.body.type === "Entrada" ? qty : -qty;
@@ -1002,7 +1016,7 @@ function createApp(options = {}) {
   });
 
   app.post("/api/users", async (req, res) => {
-    if (!["admin", "vendedor", "tecnico"].includes(req.body.role)) {
+    if (!["admin", "gerente", "vendedor", "tecnico"].includes(req.body.role)) {
       res.status(400).json({ error: "Cargo invalido." });
       return;
     }
@@ -1012,7 +1026,7 @@ function createApp(options = {}) {
   });
 
   app.put("/api/users/:id", async (req, res) => {
-    if (!["admin", "vendedor", "tecnico"].includes(req.body.role)) {
+    if (!["admin", "gerente", "vendedor", "tecnico"].includes(req.body.role)) {
       res.status(400).json({ error: "Cargo invalido." });
       return;
     }
@@ -1044,7 +1058,7 @@ function createApp(options = {}) {
 
   app.post("/api/permissions", async (req, res) => {
     const { role, modules } = req.body;
-    if (!["vendedor", "tecnico"].includes(role)) {
+    if (!["gerente", "vendedor", "tecnico"].includes(role)) {
       res.status(400).json({ error: "Cargo invalido para permissoes." });
       return;
     }

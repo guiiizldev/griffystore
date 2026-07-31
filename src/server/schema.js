@@ -38,13 +38,13 @@ const statements = [
   `CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(40) PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
-    role ENUM('admin','caixa','vendedor','tecnico') NOT NULL,
+    role ENUM('admin','gerente','caixa','vendedor','tecnico') NOT NULL,
     pin VARCHAR(20) NOT NULL,
     active TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
   `CREATE TABLE IF NOT EXISTS role_permissions (
-    role_name ENUM('caixa','vendedor','tecnico') NOT NULL,
+    role_name ENUM('gerente','caixa','vendedor','tecnico') NOT NULL,
     module_key VARCHAR(40) NOT NULL,
     allowed TINYINT(1) NOT NULL DEFAULT 0,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -276,6 +276,7 @@ const seeds = [
 ];
 
 const permissionSeeds = {
+  gerente: ["dashboard", "pos", "inventory", "parts", "services", "customers", "purchases", "documents", "operators", "reports", "settings", "backup"],
   vendedor: ["dashboard", "pos", "inventory", "services", "customers", "purchases", "documents", "reports"],
   tecnico: ["dashboard", "pos", "inventory", "parts", "services", "customers", "purchases", "documents", "reports"],
 };
@@ -299,6 +300,8 @@ const allPermissionModules = [
 async function migrate() {
   const connection = db();
   for (const sql of statements) await connection.query(sql);
+  await connection.query("ALTER TABLE users MODIFY role ENUM('admin','gerente','caixa','vendedor','tecnico') NOT NULL");
+  await connection.query("ALTER TABLE role_permissions MODIFY role_name ENUM('gerente','caixa','vendedor','tecnico') NOT NULL");
   await ensureColumn(connection, "sales", "shift_id", "VARCHAR(40) NULL");
   await ensureColumn(connection, "sales", "status", "VARCHAR(30) NOT NULL DEFAULT 'active'");
   await ensureColumn(connection, "sales", "canceled_at", "DATETIME NULL");
