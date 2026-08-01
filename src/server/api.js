@@ -58,6 +58,12 @@ function bearerToken(req) {
   return header.startsWith("Bearer ") ? header.slice(7) : "";
 }
 
+function requireRoleToken(req, roles = []) {
+  const token = verifyAdminToken(bearerToken(req));
+  if (!token || (roles.length && !roles.includes(token.role))) return null;
+  return token;
+}
+
 function mapProduct(row) {
   return {
     id: row.id,
@@ -88,6 +94,51 @@ function mapStoreProduct(row) {
     price: toNumber(row.price),
     cover: row.cover,
   };
+}
+
+function mapTimeEntry(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name,
+    type: row.entry_type,
+    at: row.entry_at,
+    source: row.source,
+    note: row.note,
+  };
+}
+
+function timeClockSummary(entries) {
+  const byUserDay = new Map();
+  for (const entry of entries) {
+    const day = formatDate(entry.entry_at);
+    const key = `${entry.user_id}:${day}`;
+    if (!byUserDay.has(key)) {
+      byUserDay.set(key, {
+        userId: entry.user_id,
+        userName: entry.user_name,
+        date: day,
+        firstIn: null,
+        lastOut: null,
+        breakStart: null,
+        breakEnd: null,
+        entries: [],
+      });
+    }
+    const item = byUserDay.get(key);
+    item.entries.push(mapTimeEntry(entry));
+    if (entry.entry_type === "Entrada" && !item.firstIn) item.firstIn = entry.entry_at;
+    if (entry.entry_type === "Saida") item.lastOut = entry.entry_at;
+    if (entry.entry_type === "Intervalo inicio" && !item.breakStart) item.breakStart = entry.entry_at;
+    if (entry.entry_type === "Intervalo fim") item.breakEnd = entry.entry_at;
+  }
+  return Array.from(byUserDay.values()).map((item) => {
+    const first = item.firstIn ? new Date(item.firstIn) : null;
+    const last = item.lastOut ? new Date(item.lastOut) : null;
+    const lateMinutes = first ? Math.max(0, first.getHours() * 60 + first.getMinutes() - 9 * 60) : null;
+    const workedMinutes = first && last ? Math.max(0, Math.round((last - first) / 60000)) : null;
+    return { ...item, lateMinutes, workedMinutes };
+  });
 }
 
 function mapRepairPart(row) {
@@ -505,6 +556,8 @@ function createApp(options = {}) {
   const publicMode = Boolean(options.publicMode);
   const storeAssetsPath = path.join(__dirname, "../../store/assets");
   const storeBuildPath = path.join(__dirname, "../../store-app/dist");
+  const timeClockPath = path.join(__dirname, "../../timeclock");
+  const scannerPath = path.join(__dirname, "../../scanner");
   const app = express();
   app.use((req, res, next) => {
     const allowedOrigin = process.env.STOREFRONT_ALLOWED_ORIGIN || "*";
@@ -513,7 +566,7 @@ function createApp(options = {}) {
       res.setHeader("Access-Control-Allow-Origin", allowedOrigin === "*" ? "*" : origin || allowedOrigin);
       res.setHeader("Vary", "Origin");
     }
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Pin");
     if (req.method === "OPTIONS") {
       res.status(204).end();
@@ -524,6 +577,8 @@ function createApp(options = {}) {
   app.use(express.json({ limit: "2mb" }));
   app.use("/assets", express.static(path.join(__dirname, "../../assets")));
   app.use("/store-assets", express.static(storeAssetsPath));
+  app.use("/ponto", express.static(timeClockPath));
+  app.use("/scanner", express.static(scannerPath));
   app.get("/loja/catalogo", (_req, res) => res.sendFile(path.join(__dirname, "../../store/catalogo.html")));
   app.get("/loja/admin", (_req, res) => res.sendFile(path.join(__dirname, "../../store/admin.html")));
   app.use("/loja", express.static(path.join(__dirname, "../../store")));
@@ -767,6 +822,120 @@ function createApp(options = {}) {
       return;
     }
     res.json({ id: user.id, name: user.name, role: user.role });
+  });
+
+  app.post("/api/timeclock/login", async (req, res) => {
+    const rows = await query("SELECT id, name, role, active FROM users WHERE id = :userId AND pin = :pin LIMIT 1", {
+      userId: req.body.userId || "",
+      pin: req.body.pin || "",
+    });
+    const user = rows[0];
+    if (!user || !user.active || user.role === "caixa") {
+      res.status(401).json({ error: "PIN invalido." });
+      return;
+    }
+    res.json({
+      token: signAdminToken({ id: user.id, name: user.name, role: user.role, exp: Date.now() + 12 * 60 * 60 * 1000 }),
+      user: { id: user.id, name: user.name, role: user.role },
+    });
+  });
+
+  app.get("/api/timeclock/users", async (_req, res) => {
+    const users = await query("SELECT id, name, role FROM users WHERE active = 1 AND role <> 'caixa' ORDER BY name");
+    res.json(users);
+  });
+
+  app.get("/api/timeclock/me", async (req, res) => {
+    const user = requireRoleToken(req);
+    if (!user) {
+      res.status(401).json({ error: "Sessao expirada." });
+      return;
+    }
+    const entries = await query(
+      "SELECT * FROM time_clock_entries WHERE user_id = :userId ORDER BY entry_at DESC LIMIT 120",
+      { userId: user.id },
+    );
+    res.json({ user, entries: entries.map(mapTimeEntry), summary: timeClockSummary(entries).slice(0, 31) });
+  });
+
+  app.post("/api/timeclock/punch", async (req, res) => {
+    const user = requireRoleToken(req);
+    if (!user) {
+      res.status(401).json({ error: "Sessao expirada." });
+      return;
+    }
+    const type = req.body.type || "Entrada";
+    const allowed = ["Entrada", "Intervalo inicio", "Intervalo fim", "Saida"];
+    if (!allowed.includes(type)) {
+      res.status(400).json({ error: "Tipo de ponto invalido." });
+      return;
+    }
+    const entry = {
+      id: uid("tc"),
+      userId: user.id,
+      userName: user.name,
+      type,
+      source: req.body.source || "web",
+      note: req.body.note || null,
+    };
+    await query(
+      `INSERT INTO time_clock_entries (id, user_id, user_name, entry_type, source, note)
+       VALUES (:id, :userId, :userName, :type, :source, :note)`,
+      entry,
+    );
+    res.json({ ok: true, entry });
+  });
+
+  app.get("/api/timeclock/admin/summary", async (req, res) => {
+    const admin = requireRoleToken(req, ["admin", "gerente"]);
+    if (!admin) {
+      res.status(403).json({ error: "Apenas administrador ou gerente." });
+      return;
+    }
+    const month = String(req.query.month || today().slice(0, 7));
+    const entries = await query(
+      "SELECT * FROM time_clock_entries WHERE DATE_FORMAT(entry_at, '%Y-%m') = :month ORDER BY entry_at ASC",
+      { month },
+    );
+    res.json({ month, summary: timeClockSummary(entries), entries: entries.map(mapTimeEntry) });
+  });
+
+  app.post("/api/products/reset", async (req, res) => {
+    if (!["admin", "gerente"].includes(req.body.operatorRole)) {
+      res.status(403).json({ error: "Apenas administrador ou gerente podem zerar produtos." });
+      return;
+    }
+    if (req.body.confirmation !== "ZERAR PRODUTOS") {
+      res.status(400).json({ error: "Confirmacao invalida. Digite ZERAR PRODUTOS." });
+      return;
+    }
+    await query("DELETE FROM products");
+    res.json({ ok: true });
+  });
+
+  app.post("/api/barcode-scans", async (req, res) => {
+    const code = String(req.body.code || "").trim();
+    if (!code) {
+      res.status(400).json({ error: "Codigo vazio." });
+      return;
+    }
+    const scan = { id: uid("scan"), code, deviceName: req.body.deviceName || "Celular" };
+    await query(
+      "INSERT INTO barcode_scans (id, code, device_name) VALUES (:id, :code, :deviceName)",
+      scan,
+    );
+    res.json({ ok: true, scan });
+  });
+
+  app.post("/api/barcode-scans/consume", async (_req, res) => {
+    const rows = await query("SELECT * FROM barcode_scans WHERE used = 0 ORDER BY created_at ASC LIMIT 1");
+    const scan = rows[0];
+    if (!scan) {
+      res.json({ code: "" });
+      return;
+    }
+    await query("UPDATE barcode_scans SET used = 1 WHERE id = :id", { id: scan.id });
+    res.json({ id: scan.id, code: scan.code, deviceName: scan.device_name, createdAt: scan.created_at });
   });
 
   app.get("/api/state", async (_req, res) => {

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scanner Griffy Store</title>
+    <link rel="stylesheet" href="/scanner/styles.css" />
+  </head>
+  <body>
+    <main>
+      <img src="/assets/logoretangular-enhanced.png" alt="Griffy Store" />
+      <h1>Scanner de codigo</h1>
+      <p>Use a camera do celular ou digite o codigo manualmente.</p>
+      <video id="video" playsinline muted></video>
+      <form id="manualForm">
+        <input id="code" autocomplete="off" inputmode="text" placeholder="Codigo de barras" required />
+        <button type="submit">Enviar codigo</button>
+      </form>
+      <button id="start" type="button">Iniciar camera</button>
+      <div id="status"></div>
+    </main>
+    <script src="/scanner/app.js"></script>
+  </body>
+</html>

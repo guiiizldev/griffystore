@@ -575,6 +575,7 @@ function posScreen() {
           <div class="toolbar">
             <input id="productSearch" placeholder="Buscar produto ou codigo" oninput="setUi('productSearch', this.value)" value="${valueOf("productSearch")}" />
             <button class="btn primary" onclick="addBySearch()">Adicionar codigo</button>
+            <button class="btn" onclick="pullMobileScan()">Puxar scanner</button>
             <button class="btn" onclick="openModal('product')">Novo item</button>
           </div>
         </div>
@@ -1166,6 +1167,14 @@ function settingsScreen() {
           <button class="btn" type="button" onclick="checkForUpdates(false)">Verificar atualizacao</button>
           ${updateInfo?.updateAvailable ? `<button class="btn primary" type="button" onclick="installUpdate()">Baixar instalador ${updateInfo.latestVersion}</button>` : ""}
         </div>
+        ${canDeleteProducts() ? `
+          <div class="card-head" style="margin-top:12px"><h2>Zona administrativa</h2></div>
+          <div class="notice-box danger-zone">
+            <strong>Zerar produtos cadastrados</strong>
+            <span>Remove todos os produtos do estoque para recadastrar do zero. Historico de vendas permanece guardado.</span>
+            <div class="actions"><button class="btn danger" type="button" onclick="resetProducts()">Zerar produtos</button></div>
+          </div>
+        ` : ""}
         <div class="actions"><button class="btn primary" type="submit">Salvar configuracoes</button></div>
       </form>
     </section>
@@ -2649,6 +2658,31 @@ function addBySearch() {
   addCart(product.id);
 }
 
+async function pullMobileScan() {
+  if (!apiOnline) {
+    alert("Scanner mobile precisa da API conectada.");
+    return;
+  }
+  try {
+    const scan = await apiSend("/barcode-scans/consume", {});
+    if (!scan.code) {
+      alert("Nenhum codigo enviado pelo celular.");
+      return;
+    }
+    ui.productSearch = scan.code;
+    const product = state.products.find((p) => String(p.code || "").toLowerCase() === String(scan.code).toLowerCase());
+    if (!product) {
+      alert(`Codigo ${scan.code} recebido, mas produto nao encontrado.`);
+      render();
+      return;
+    }
+    addCart(product.id);
+    alert(`Produto adicionado pelo scanner: ${product.name}`);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 function setCartQty(id, qtyValue) {
   const item = cart.find((x) => x.id === id);
   const product = state.products.find((p) => p.id === id);
@@ -2810,6 +2844,34 @@ async function deleteProduct(id) {
       saveState();
     }
     notify("Produto excluido com sucesso.", "success");
+    render();
+  } catch (error) {
+    notify(error.message, inferNotificationType(error.message));
+  }
+}
+
+async function resetProducts() {
+  if (!canDeleteProducts()) {
+    alert("Apenas administrador ou gerente podem zerar produtos.");
+    return;
+  }
+  const first = confirm("Tem certeza que deseja remover todos os produtos cadastrados? Esta acao deixa o estoque de venda vazio.");
+  if (!first) return;
+  const confirmation = prompt('Digite exatamente "ZERAR PRODUTOS" para confirmar.');
+  if (confirmation !== "ZERAR PRODUTOS") {
+    alert("Confirmacao cancelada.");
+    return;
+  }
+  try {
+    if (apiOnline) {
+      await apiSend("/products/reset", { operator: session.name, operatorRole: session.role, confirmation });
+      await reloadState();
+    } else {
+      state.products = [];
+      saveState();
+    }
+    cart = [];
+    alert("Produtos zerados. Cadastre o estoque novamente com codigos e informacoes corretas.");
     render();
   } catch (error) {
     notify(error.message, inferNotificationType(error.message));

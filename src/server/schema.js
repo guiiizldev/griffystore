@@ -251,6 +251,34 @@ const statements = [
     price DECIMAL(12,2) NOT NULL,
     FOREIGN KEY (order_id) REFERENCES online_orders(id) ON DELETE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS time_clock_entries (
+    id VARCHAR(40) PRIMARY KEY,
+    user_id VARCHAR(40) NOT NULL,
+    user_name VARCHAR(120) NOT NULL,
+    entry_type ENUM('Entrada','Intervalo inicio','Intervalo fim','Saida') NOT NULL,
+    entry_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source VARCHAR(40) NOT NULL DEFAULT 'web',
+    note VARCHAR(255) NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS time_clock_adjustments (
+    id VARCHAR(40) PRIMARY KEY,
+    user_id VARCHAR(40) NOT NULL,
+    adjustment_date DATE NOT NULL,
+    expected_start TIME NULL,
+    expected_end TIME NULL,
+    note VARCHAR(255) NULL,
+    created_by VARCHAR(120) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS barcode_scans (
+    id VARCHAR(40) PRIMARY KEY,
+    code VARCHAR(120) NOT NULL,
+    device_name VARCHAR(120) NULL,
+    used TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
 ];
 
 const seeds = [
