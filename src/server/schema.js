@@ -286,13 +286,6 @@ const seeds = [
     ('u1','Administrador','admin','1234',1),
     ('u3','Vendedor','vendedor','3333',1),
     ('u4','Técnico','tecnico','4444',1)`,
-  `INSERT IGNORE INTO products (id, name, category, stock, min_stock, cost, price) VALUES
-    ('p1','iPhone 11 128GB','IPHONES',4,1,1450,1899),
-    ('p2','Samsung A34 5G','CHIP',6,2,1220,1699),
-    ('p3','Xiaomi Redmi Note 13','CHIP',8,2,980,1399),
-    ('p4','Película 3D Premium','PELÍCULAS',42,10,8,35),
-    ('p5','Carregador Turbo USB-C','CARREGADOR COMPLETO',21,6,32,79.90),
-    ('p6','Capa Silicone Reforçada','CAPAS',33,8,12,49.90)`,
   `INSERT IGNORE INTO customers (id, name, phone, document) VALUES
     ('c1','Mariana Costa','(11) 98888-1212','123.456.789-00'),
     ('c2','Rafael Lima','(11) 97777-3434','987.654.321-00')`,
