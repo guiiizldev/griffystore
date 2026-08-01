@@ -258,6 +258,14 @@ const statements = [
     entry_type ENUM('Entrada','Intervalo inicio','Intervalo fim','Saida') NOT NULL,
     entry_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     source VARCHAR(40) NOT NULL DEFAULT 'web',
+    latitude DECIMAL(10,7) NULL,
+    longitude DECIMAL(10,7) NULL,
+    accuracy DECIMAL(10,2) NULL,
+    distance_meters INT NULL,
+    location_status VARCHAR(40) NULL,
+    photo_data LONGTEXT NULL,
+    device_info VARCHAR(255) NULL,
+    ip_address VARCHAR(80) NULL,
     note VARCHAR(255) NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`,
@@ -365,6 +373,14 @@ async function migrate() {
   await ensureColumn(connection, "purchase_documents", "quantity", "INT NOT NULL DEFAULT 1");
   await ensureColumn(connection, "purchase_documents", "warranty_months", "INT NOT NULL DEFAULT 6");
   await ensureColumn(connection, "online_orders", "payment_method", "VARCHAR(60) NULL");
+  await ensureColumn(connection, "time_clock_entries", "latitude", "DECIMAL(10,7) NULL");
+  await ensureColumn(connection, "time_clock_entries", "longitude", "DECIMAL(10,7) NULL");
+  await ensureColumn(connection, "time_clock_entries", "accuracy", "DECIMAL(10,2) NULL");
+  await ensureColumn(connection, "time_clock_entries", "distance_meters", "INT NULL");
+  await ensureColumn(connection, "time_clock_entries", "location_status", "VARCHAR(40) NULL");
+  await ensureColumn(connection, "time_clock_entries", "photo_data", "LONGTEXT NULL");
+  await ensureColumn(connection, "time_clock_entries", "device_info", "VARCHAR(255) NULL");
+  await ensureColumn(connection, "time_clock_entries", "ip_address", "VARCHAR(80) NULL");
   await ensureIndex(connection, "products", "idx_products_code_unique", "CREATE UNIQUE INDEX idx_products_code_unique ON products (code)");
   for (const name of categories) {
     await connection.query("INSERT IGNORE INTO categories (name) VALUES (?)", [name]);
@@ -400,6 +416,9 @@ async function migrate() {
   await seedSetting(connection, "fiscal.environment", "homologacao");
   await seedSetting(connection, "sales.cancel_by_operator", "false");
   await seedSetting(connection, "sales.cancel_operator_ids", "[]");
+  await seedSetting(connection, "timeclock.store_latitude", "");
+  await seedSetting(connection, "timeclock.store_longitude", "");
+  await seedSetting(connection, "timeclock.allowed_radius_meters", "150");
   for (const sql of seeds) await connection.query(sql);
   console.log(`Banco preparado: ${config.database} em ${config.host}:${config.port}`);
 }

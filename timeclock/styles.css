@@ -165,6 +165,56 @@ header,
   background: rgba(246, 194, 26, 0.1);
 }
 
+.notice.ok {
+  border-color: rgba(72, 211, 137, 0.45);
+  background: rgba(72, 211, 137, 0.12);
+}
+
+.entry-card {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+
+.entry-card:last-child {
+  border-bottom: 0;
+}
+
+.entry-card img,
+.thumb {
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.entry-card div {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+}
+
+.entry-card span,
+.entry-card small {
+  color: var(--muted);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.settings-grid h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -186,7 +236,8 @@ th {
 @media (max-width: 820px) {
   .shell,
   .grid,
-  .actions {
+  .actions,
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 

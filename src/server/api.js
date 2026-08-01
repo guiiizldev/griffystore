@@ -104,8 +104,27 @@ function mapTimeEntry(row) {
     type: row.entry_type,
     at: row.entry_at,
     source: row.source,
+    latitude: row.latitude === null || row.latitude === undefined ? null : Number(row.latitude),
+    longitude: row.longitude === null || row.longitude === undefined ? null : Number(row.longitude),
+    accuracy: row.accuracy === null || row.accuracy === undefined ? null : Number(row.accuracy),
+    distanceMeters: row.distance_meters,
+    locationStatus: row.location_status,
+    photoData: row.photo_data,
+    deviceInfo: row.device_info,
+    ipAddress: row.ip_address,
     note: row.note,
   };
+}
+
+function distanceMeters(aLat, aLng, bLat, bLng) {
+  const toRad = (value) => (Number(value) * Math.PI) / 180;
+  const earth = 6371000;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return Math.round(earth * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)));
 }
 
 function timeClockSummary(entries) {
@@ -574,7 +593,7 @@ function createApp(options = {}) {
     }
     next();
   });
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "8mb" }));
   app.use("/assets", express.static(path.join(__dirname, "../../assets")));
   app.use("/store-assets", express.static(storeAssetsPath));
   app.use("/ponto", express.static(timeClockPath));
@@ -870,17 +889,43 @@ function createApp(options = {}) {
       res.status(400).json({ error: "Tipo de ponto invalido." });
       return;
     }
+    if (!req.body.photoData || !String(req.body.photoData).startsWith("data:image/")) {
+      res.status(400).json({ error: "Selfie obrigatoria para registrar o ponto." });
+      return;
+    }
+    if (req.body.latitude === undefined || req.body.longitude === undefined) {
+      res.status(400).json({ error: "Localizacao obrigatoria para registrar o ponto." });
+      return;
+    }
+    const settings = mapSettings(await query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings WHERE setting_key LIKE 'timeclock.%'"));
+    const storeLat = Number(settings["timeclock.store_latitude"] || 0);
+    const storeLng = Number(settings["timeclock.store_longitude"] || 0);
+    const allowedRadius = Number(settings["timeclock.allowed_radius_meters"] || 150);
+    const latitude = Number(req.body.latitude);
+    const longitude = Number(req.body.longitude);
+    const hasStoreLocation = Boolean(storeLat && storeLng);
+    const distance = hasStoreLocation ? distanceMeters(storeLat, storeLng, latitude, longitude) : null;
+    const locationStatus = !hasStoreLocation ? "Loja sem local" : distance <= allowedRadius ? "Dentro do raio" : "Fora do raio";
     const entry = {
       id: uid("tc"),
       userId: user.id,
       userName: user.name,
       type,
       source: req.body.source || "web",
+      latitude,
+      longitude,
+      accuracy: req.body.accuracy === undefined ? null : Number(req.body.accuracy || 0),
+      distanceMeters: distance,
+      locationStatus,
+      photoData: String(req.body.photoData).slice(0, 5_000_000),
+      deviceInfo: String(req.body.deviceInfo || req.get("User-Agent") || "").slice(0, 255),
+      ipAddress: String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].slice(0, 80),
       note: req.body.note || null,
     };
     await query(
-      `INSERT INTO time_clock_entries (id, user_id, user_name, entry_type, source, note)
-       VALUES (:id, :userId, :userName, :type, :source, :note)`,
+      `INSERT INTO time_clock_entries
+       (id, user_id, user_name, entry_type, source, latitude, longitude, accuracy, distance_meters, location_status, photo_data, device_info, ip_address, note)
+       VALUES (:id, :userId, :userName, :type, :source, :latitude, :longitude, :accuracy, :distanceMeters, :locationStatus, :photoData, :deviceInfo, :ipAddress, :note)`,
       entry,
     );
     res.json({ ok: true, entry });
@@ -897,7 +942,30 @@ function createApp(options = {}) {
       "SELECT * FROM time_clock_entries WHERE DATE_FORMAT(entry_at, '%Y-%m') = :month ORDER BY entry_at ASC",
       { month },
     );
-    res.json({ month, summary: timeClockSummary(entries), entries: entries.map(mapTimeEntry) });
+    const settings = mapSettings(await query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings WHERE setting_key LIKE 'timeclock.%'"));
+    res.json({ month, settings, summary: timeClockSummary(entries), entries: entries.map(mapTimeEntry) });
+  });
+
+  app.post("/api/timeclock/admin/settings", async (req, res) => {
+    const admin = requireRoleToken(req, ["admin", "gerente"]);
+    if (!admin) {
+      res.status(403).json({ error: "Apenas administrador ou gerente." });
+      return;
+    }
+    const allowed = {
+      "timeclock.store_latitude": req.body.storeLatitude || "",
+      "timeclock.store_longitude": req.body.storeLongitude || "",
+      "timeclock.allowed_radius_meters": String(Number(req.body.allowedRadiusMeters || 150)),
+    };
+    for (const [key, value] of Object.entries(allowed)) {
+      await query(
+        `INSERT INTO app_settings (setting_key, setting_value)
+         VALUES (:key, :value)
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+        { key, value },
+      );
+    }
+    res.json({ ok: true });
   });
 
   app.post("/api/products/reset", async (req, res) => {
