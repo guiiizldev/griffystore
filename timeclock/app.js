@@ -137,7 +137,7 @@ async function loadAdminSummary() {
 function loginView() {
   return `<section class="login">
     <div class="brand">
-      <img src="/assets/logoretangular-enhanced.png" alt="Griffy Store" />
+      <img src="logo.png" alt="Griffy Store" />
       <h1>Ponto Griffy Store</h1>
       <p>Registro de entrada, intervalo e saida dos funcionarios.</p>
     </div>
@@ -163,7 +163,7 @@ function employeeView() {
   return `<section class="shell">
     <aside>
       <div class="aside-brand">
-        <img src="/assets/logoretangular-enhanced.png" alt="Griffy Store" />
+        <img src="logo.png" alt="Griffy Store" />
       </div>
       <div class="user-card">
         <strong>${session.name}</strong>
