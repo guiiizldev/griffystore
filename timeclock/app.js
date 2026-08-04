@@ -114,23 +114,80 @@ function getPosition() {
 async function captureSelfie() {
   if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera indisponivel neste navegador.");
   const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
-  try {
-    const video = document.createElement("video");
+  return guidedSelfieCapture(stream);
+}
+
+function guidedSelfieCapture(stream) {
+  return new Promise((resolve, reject) => {
+    const overlay = document.createElement("div");
+    overlay.className = "selfie-overlay";
+    overlay.innerHTML = `
+      <section class="selfie-dialog">
+        <div class="selfie-head">
+          <h2>Centralize o rosto</h2>
+          <p>Use boa luz, olhe para a camera e mantenha o rosto dentro da moldura.</p>
+        </div>
+        <div class="selfie-frame">
+          <video class="selfie-video" autoplay playsinline muted></video>
+          <span class="face-guide" aria-hidden="true"></span>
+        </div>
+        <div class="selfie-actions">
+          <button class="ghost" type="button" data-action="cancel">Cancelar</button>
+          <button class="primary" type="button" data-action="capture">Usar foto</button>
+        </div>
+      </section>`;
+    document.body.appendChild(overlay);
+
+    const video = overlay.querySelector("video");
     video.srcObject = stream;
-    video.muted = true;
-    video.playsInline = true;
-    await video.play();
-    await new Promise((resolve) => setTimeout(resolve, 450));
-    const canvas = document.createElement("canvas");
-    const width = 420;
-    const ratio = video.videoHeight / Math.max(1, video.videoWidth);
-    canvas.width = width;
-    canvas.height = Math.round(width * ratio);
-    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.72);
-  } finally {
-    stream.getTracks().forEach((track) => track.stop());
-  }
+
+    const cleanup = () => {
+      stream.getTracks().forEach((track) => track.stop());
+      overlay.remove();
+    };
+
+    overlay.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+      cleanup();
+      reject(new Error("Captura cancelada."));
+    });
+
+    overlay.querySelector('[data-action="capture"]').addEventListener("click", async () => {
+      try {
+        if (!video.videoWidth || !video.videoHeight) {
+          await new Promise((resolveReady) => setTimeout(resolveReady, 300));
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = 720;
+        canvas.height = 900;
+        const context = canvas.getContext("2d");
+        const sourceRatio = video.videoWidth / Math.max(1, video.videoHeight);
+        const targetRatio = canvas.width / canvas.height;
+        let sx = 0;
+        let sy = 0;
+        let sw = video.videoWidth;
+        let sh = video.videoHeight;
+        if (sourceRatio > targetRatio) {
+          sw = video.videoHeight * targetRatio;
+          sx = (video.videoWidth - sw) / 2;
+        } else {
+          sh = video.videoWidth / targetRatio;
+          sy = (video.videoHeight - sh) / 2;
+        }
+        context.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+        const photo = canvas.toDataURL("image/jpeg", 0.82);
+        cleanup();
+        resolve(photo);
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
+    });
+
+    video.play().catch((error) => {
+      cleanup();
+      reject(error);
+    });
+  });
 }
 
 async function collectEvidence() {
