@@ -9,6 +9,7 @@
     "dev": "electron .",
     "build:win": "electron-builder --win nsis",
     "build:portable": "electron-builder --win dir",
+    "update:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-update-release.ps1",
     "web:build": "npm install --prefix store-app && npm run build --prefix store-app",
     "web:start": "node src/server/public.js",
     "db:schema": "node src/server/schema.js",
@@ -46,6 +47,7 @@
       "store-app/dist/**/*",
       "scanner/**/*",
       "timeclock/**/*",
+      "updates/**/*",
       "database/**/*",
       "src/**/*",
       "package.json"

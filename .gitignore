@@ -1,6 +1,7 @@
 node_modules/
 store-app/node_modules/
 dist/
+dist-scanner-fix/
 store-app/dist/
 
 .env

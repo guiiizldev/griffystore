@@ -156,6 +156,10 @@ function configuredApiBase() {
   return clean.endsWith("/api") ? clean : `${clean}/api`;
 }
 
+function configuredAppVersion() {
+  return new URLSearchParams(window.location.search).get("appVersion") || "0.2.0";
+}
+
 const apiBase = configuredApiBase();
 let apiOnline = false;
 let state = loadState();
@@ -166,7 +170,7 @@ let cart = [];
 let ui = {};
 let paymentRows = [{ method: "Pix", amount: "", details: "", installments: "" }];
 let lastCloseReport = null;
-let appInfo = { version: "" };
+let appInfo = { version: configuredAppVersion() };
 let updateInfo = null;
 let notifications = [];
 let renderScheduled = false;
@@ -237,7 +241,8 @@ async function boot() {
     await api("/health");
     apiOnline = true;
     state = await api("/state");
-    appInfo = await api("/version").catch(() => appInfo);
+    const serverInfo = await api("/version").catch(() => ({}));
+    appInfo = { ...serverInfo, version: configuredAppVersion() };
     checkForUpdates(true);
   } catch (_error) {
     apiOnline = false;
@@ -1334,7 +1339,7 @@ async function checkForUpdates(silent = false) {
     return;
   }
   try {
-    updateInfo = await api("/updates/check");
+    updateInfo = await api(`/updates/check?currentVersion=${encodeURIComponent(appInfo.version || configuredAppVersion())}`);
     if (!silent) {
       if (updateInfo.enabled === false) alert("Auto update ainda nao configurado. Preencha UPDATE_MANIFEST_URL no .env.");
       else if (updateInfo.updateAvailable) alert(`Nova versao disponivel: ${updateInfo.latestVersion}`);

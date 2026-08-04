@@ -446,6 +446,28 @@ function fetchJson(url) {
   });
 }
 
+async function loadUpdateManifest(req) {
+  const manifestUrl = process.env.UPDATE_MANIFEST_URL || "";
+  if (manifestUrl) {
+    const manifest = await fetchJson(manifestUrl);
+    const baseUrl = new URL(manifestUrl);
+    const rawUrl = manifest.url || manifest.downloadUrl || "";
+    if (rawUrl && !/^https?:\/\//i.test(rawUrl)) manifest.downloadUrl = new URL(rawUrl, baseUrl).toString();
+    return manifest;
+  }
+
+  const manifestPath = path.join(__dirname, "../../updates/latest.json");
+  if (!fs.existsSync(manifestPath)) return null;
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const rawUrl = manifest.url || manifest.downloadUrl || "";
+  if (rawUrl && !/^https?:\/\//i.test(rawUrl)) {
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "http";
+    const host = req.headers["x-forwarded-host"] || req.get("host");
+    manifest.downloadUrl = `${protocol}://${host}${rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`}`;
+  }
+  return manifest;
+}
+
 function groupBy(rows, key) {
   return rows.reduce((map, row) => {
     const value = row[key];
@@ -598,6 +620,11 @@ function createApp(options = {}) {
   app.use("/store-assets", express.static(storeAssetsPath));
   app.use("/ponto", express.static(timeClockPath));
   app.use("/scanner", express.static(scannerPath));
+  app.use("/updates", express.static(path.join(__dirname, "../../updates"), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".json")) res.setHeader("Cache-Control", "no-store");
+    },
+  }));
   app.get("/loja/catalogo", (_req, res) => res.sendFile(path.join(__dirname, "../../store/catalogo.html")));
   app.get("/loja/admin", (_req, res) => res.sendFile(path.join(__dirname, "../../store/admin.html")));
   app.use("/loja", express.static(path.join(__dirname, "../../store")));
@@ -615,21 +642,23 @@ function createApp(options = {}) {
     });
   });
 
-  app.get("/api/updates/check", async (_req, res) => {
-    const manifestUrl = process.env.UPDATE_MANIFEST_URL || "";
-    if (!manifestUrl) {
-      res.json({ enabled: false, currentVersion: packageInfo.version, updateAvailable: false });
+  app.get("/api/updates/check", async (req, res) => {
+    const currentVersion = String(req.query.currentVersion || packageInfo.version || "0.0.0");
+    const manifest = await loadUpdateManifest(req);
+    if (!manifest) {
+      res.json({ enabled: false, currentVersion, updateAvailable: false });
       return;
     }
-    const manifest = await fetchJson(manifestUrl);
     const latestVersion = manifest.version || manifest.latestVersion || "";
-    const downloadUrl = manifest.url || manifest.downloadUrl || "";
+    const downloadUrl = manifest.downloadUrl || manifest.url || "";
     res.json({
       enabled: true,
-      currentVersion: packageInfo.version,
+      currentVersion,
       latestVersion,
-      updateAvailable: compareVersions(latestVersion, packageInfo.version) > 0,
+      updateAvailable: compareVersions(latestVersion, currentVersion) > 0,
       downloadUrl,
+      sha256: manifest.sha256 || "",
+      size: manifest.size || null,
       notes: manifest.notes || "",
       required: Boolean(manifest.required),
       publishedAt: manifest.publishedAt || "",

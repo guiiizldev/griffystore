@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, shell } = require("electron");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const packageInfo = require("../../package.json");
 
 let mainWindow;
 let server;
@@ -109,7 +110,12 @@ async function createWindow() {
     },
   });
 
-  await mainWindow.loadFile(path.join(__dirname, "../../index.html"), remoteApiBase ? { query: { apiBase: remoteApiBase } } : undefined);
+  await mainWindow.loadFile(path.join(__dirname, "../../index.html"), {
+    query: {
+      ...(remoteApiBase ? { apiBase: remoteApiBase } : {}),
+      appVersion: packageInfo.version,
+    },
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) {
       shell.openExternal(url);
