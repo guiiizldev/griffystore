@@ -230,6 +230,34 @@ header p,
   gap: 12px;
 }
 
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px;
+  background: rgba(8, 11, 15, 0.72);
+}
+
+.tabs button {
+  min-height: 44px;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.tabs button.active {
+  color: #0b0d10;
+  background: var(--brand);
+  border-color: rgba(246, 194, 26, 0.72);
+}
+
+.tab-page {
+  display: grid;
+  gap: 18px;
+}
+
 .punch-action {
   min-height: 96px;
   display: grid;
@@ -277,6 +305,66 @@ header p,
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
   gap: 18px;
+}
+
+.account-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  gap: 18px;
+  align-items: start;
+}
+
+.account-card,
+.face-card {
+  align-content: start;
+}
+
+.profile-lines {
+  display: grid;
+  gap: 10px;
+}
+
+.profile-lines div {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.profile-lines div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.profile-lines span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.face-preview {
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background:
+    linear-gradient(135deg, rgba(246, 194, 26, 0.08), transparent 35%),
+    #080b0f;
+}
+
+.face-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.face-card p {
+  margin-bottom: 0;
 }
 
 .row {
@@ -430,6 +518,7 @@ th {
   }
 
   .grid,
+  .account-grid,
   .settings-grid {
     grid-template-columns: 1fr;
   }
@@ -477,6 +566,17 @@ th {
 
   .actions {
     gap: 8px;
+  }
+
+  .tabs {
+    gap: 5px;
+    padding: 5px;
+  }
+
+  .tabs button {
+    min-height: 40px;
+    padding-inline: 6px;
+    font-size: 13px;
   }
 
   .punch-action {

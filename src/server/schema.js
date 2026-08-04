@@ -280,6 +280,13 @@ const statements = [
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS time_clock_profiles (
+    user_id VARCHAR(40) PRIMARY KEY,
+    face_photo_data LONGTEXT NULL,
+    face_updated_at DATETIME NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
   `CREATE TABLE IF NOT EXISTS barcode_scans (
     id VARCHAR(40) PRIMARY KEY,
     code VARCHAR(120) NOT NULL,

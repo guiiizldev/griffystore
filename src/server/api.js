@@ -870,11 +870,40 @@ function createApp(options = {}) {
       res.status(401).json({ error: "Sessao expirada." });
       return;
     }
-    const entries = await query(
-      "SELECT * FROM time_clock_entries WHERE user_id = :userId ORDER BY entry_at DESC LIMIT 120",
-      { userId: user.id },
+    const [entries, profiles] = await Promise.all([
+      query("SELECT * FROM time_clock_entries WHERE user_id = :userId ORDER BY entry_at DESC LIMIT 120", { userId: user.id }),
+      query("SELECT user_id, face_photo_data, face_updated_at, updated_at FROM time_clock_profiles WHERE user_id = :userId LIMIT 1", { userId: user.id }),
+    ]);
+    const profile = profiles[0] || {};
+    res.json({
+      user,
+      profile: {
+        facePhotoData: profile.face_photo_data || "",
+        faceUpdatedAt: profile.face_updated_at || profile.updated_at || null,
+      },
+      entries: entries.map(mapTimeEntry),
+      summary: timeClockSummary(entries).slice(0, 31),
+    });
+  });
+
+  app.post("/api/timeclock/profile/face", async (req, res) => {
+    const user = requireRoleToken(req);
+    if (!user) {
+      res.status(401).json({ error: "Sessao expirada." });
+      return;
+    }
+    if (!req.body.photoData || !String(req.body.photoData).startsWith("data:image/")) {
+      res.status(400).json({ error: "Selfie obrigatoria para atualizar o facial." });
+      return;
+    }
+    const photoData = String(req.body.photoData).slice(0, 5_000_000);
+    await query(
+      `INSERT INTO time_clock_profiles (user_id, face_photo_data, face_updated_at)
+       VALUES (:userId, :photoData, CURRENT_TIMESTAMP)
+       ON DUPLICATE KEY UPDATE face_photo_data = VALUES(face_photo_data), face_updated_at = CURRENT_TIMESTAMP`,
+      { userId: user.id, photoData },
     );
-    res.json({ user, entries: entries.map(mapTimeEntry), summary: timeClockSummary(entries).slice(0, 31) });
+    res.json({ ok: true, facePhotoData: photoData, faceUpdatedAt: new Date().toISOString() });
   });
 
   app.post("/api/timeclock/punch", async (req, res) => {

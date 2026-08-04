@@ -9,6 +9,7 @@ let me = null;
 let adminSummary = null;
 let statusText = "";
 let evidenceText = "";
+let currentTab = "punch";
 
 function roleName(role) {
   return { admin: "Administrador", gerente: "Gerente", vendedor: "Vendedor", tecnico: "Tecnico" }[role] || role;
@@ -68,6 +69,28 @@ async function punch(type) {
     statusText = `${type} registrado.`;
     evidenceText = "Selfie e localizacao salvas.";
     await loadMe();
+  } catch (error) {
+    statusText = error.message;
+  }
+  render();
+}
+
+async function updateFaceProfile() {
+  statusText = "Abrindo camera para atualizar facial...";
+  render();
+  try {
+    const photoData = await captureSelfie();
+    const result = await api("/timeclock/profile/face", { method: "POST", body: JSON.stringify({ photoData }) });
+    me = {
+      ...(me || {}),
+      profile: {
+        ...(me?.profile || {}),
+        facePhotoData: result.facePhotoData,
+        faceUpdatedAt: result.faceUpdatedAt,
+      },
+    };
+    statusText = "Facial atualizado com sucesso.";
+    evidenceText = "Nova selfie de referencia salva na conta.";
   } catch (error) {
     statusText = error.message;
   }
@@ -179,32 +202,89 @@ function employeeView() {
         </div>
         ${canAdmin ? `<button class="secondary" type="button" onclick="loadAdminSummary()">Painel admin</button>` : ""}
       </header>
-      <div class="actions">
-        ${[
-          { type: "Entrada", label: "Entrada" },
-          { type: "Intervalo inicio", label: "Inicio intervalo" },
-          { type: "Intervalo fim", label: "Fim intervalo" },
-          { type: "Saida", label: "Saida" },
-        ].map((item) => `<button class="punch-action" type="button" onclick="punch('${item.type}')"><span>${item.label}</span></button>`).join("")}
-      </div>
-      <div class="notice">
-        Ao bater ponto, o sistema registra selfie, GPS, aparelho e IP para validacao administrativa.
-      </div>
+      <nav class="tabs" aria-label="Areas do ponto">
+        ${tabButton("punch", "Registrar")}
+        ${tabButton("account", "Minha conta")}
+        ${tabButton("history", "Historico")}
+      </nav>
       ${statusText ? `<div class="notice">${statusText}</div>` : ""}
       ${evidenceText ? `<div class="notice ok">${evidenceText}</div>` : ""}
-      <div class="grid">
-        <section class="panel">
-          <h2>Ultimas batidas</h2>
-          ${entries.length ? entries.slice(0, 12).map(entryRow).join("") : `<div class="empty">Nenhuma batida registrada.</div>`}
-        </section>
-        <section class="panel">
-          <h2>Pontualidade</h2>
-          ${summary.length ? summary.slice(0, 8).map((day) => `<div class="row"><span>${day.date}</span><strong>${day.lateMinutes ? `${day.lateMinutes} min atraso` : "No horario"}</strong></div>`).join("") : `<div class="empty">Sem resumo ainda.</div>`}
-        </section>
-      </div>
+      ${currentTab === "account" ? accountView() : currentTab === "history" ? historyView(entries, summary) : punchView(entries, summary)}
       ${adminSummary ? adminView() : ""}
     </main>
   </section>`;
+}
+
+function tabButton(id, label) {
+  return `<button class="${currentTab === id ? "active" : ""}" type="button" onclick="currentTab='${id}'; render()">${label}</button>`;
+}
+
+function punchView(entries, summary) {
+  return `<section class="tab-page">
+    <div class="actions">
+      ${[
+        { type: "Entrada", label: "Entrada" },
+        { type: "Intervalo inicio", label: "Inicio intervalo" },
+        { type: "Intervalo fim", label: "Fim intervalo" },
+        { type: "Saida", label: "Saida" },
+      ].map((item) => `<button class="punch-action" type="button" onclick="punch('${item.type}')"><span>${item.label}</span></button>`).join("")}
+    </div>
+    <div class="notice">
+      Ao bater ponto, o sistema registra selfie, GPS, aparelho e IP para validacao administrativa.
+    </div>
+    <div class="grid">
+      <section class="panel">
+        <h2>Ultimas batidas</h2>
+        ${entries.length ? entries.slice(0, 6).map(entryRow).join("") : `<div class="empty">Nenhuma batida registrada.</div>`}
+      </section>
+      <section class="panel">
+        <h2>Pontualidade</h2>
+        ${summary.length ? summary.slice(0, 6).map(summaryRow).join("") : `<div class="empty">Sem resumo ainda.</div>`}
+      </section>
+    </div>
+  </section>`;
+}
+
+function accountView() {
+  const profile = me?.profile || {};
+  return `<section class="account-grid">
+    <article class="panel account-card">
+      <div>
+        <h2>Minha conta</h2>
+        <p>Dados do funcionario conectado ao ponto.</p>
+      </div>
+      <div class="profile-lines">
+        <div><span>Nome</span><strong>${session.name}</strong></div>
+        <div><span>Cargo</span><strong>${roleName(session.role)}</strong></div>
+        <div><span>Facial</span><strong>${profile.faceUpdatedAt ? `Atualizado em ${moneylessDate.format(new Date(profile.faceUpdatedAt))}` : "Nao cadastrado"}</strong></div>
+      </div>
+    </article>
+    <article class="panel face-card">
+      <h2>Facial de referencia</h2>
+      <div class="face-preview">
+        ${profile.facePhotoData ? `<img src="${profile.facePhotoData}" alt="Facial de referencia" />` : `<span>Sem facial cadastrado</span>`}
+      </div>
+      <button class="primary" type="button" onclick="updateFaceProfile()">Atualizar facial</button>
+      <p>Use uma foto frontal, com boa luz e o rosto centralizado.</p>
+    </article>
+  </section>`;
+}
+
+function historyView(entries, summary) {
+  return `<section class="grid">
+    <section class="panel">
+      <h2>Pontos batidos</h2>
+      ${entries.length ? entries.map(entryRow).join("") : `<div class="empty">Nenhuma batida registrada.</div>`}
+    </section>
+    <section class="panel">
+      <h2>Resumo dos dias</h2>
+      ${summary.length ? summary.map(summaryRow).join("") : `<div class="empty">Sem resumo ainda.</div>`}
+    </section>
+  </section>`;
+}
+
+function summaryRow(day) {
+  return `<div class="row"><span>${day.date}</span><strong>${day.lateMinutes ? `${day.lateMinutes} min atraso` : "No horario"}</strong></div>`;
 }
 
 function entryRow(entry) {
