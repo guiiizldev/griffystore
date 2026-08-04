@@ -1630,17 +1630,40 @@ async function startServer(port = 3789) {
   await migrate();
   const app = createApp();
   const httpServer = http.createServer(app);
+  const sockets = new Set();
+  httpServer.keepAliveTimeout = 1000;
+  httpServer.headersTimeout = 3000;
+  httpServer.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
+  });
   await new Promise((resolve, reject) => {
     httpServer.once("error", reject);
-    httpServer.listen(port, "127.0.0.1", resolve);
+    httpServer.listen(port, "127.0.0.1", () => {
+      httpServer.off("error", reject);
+      resolve();
+    });
   });
   return {
     close: () =>
       new Promise((resolve) => {
-        httpServer.close(async () => {
+        let closed = false;
+        const finish = async () => {
+          if (closed) return;
+          closed = true;
           await closeDb();
           resolve();
+        };
+        const forceClose = setTimeout(() => {
+          sockets.forEach((socket) => socket.destroy());
+          finish();
+        }, 1500);
+        forceClose.unref?.();
+        httpServer.close(async () => {
+          clearTimeout(forceClose);
+          await finish();
         });
+        httpServer.closeAllConnections?.();
       }),
   };
 }

@@ -148,7 +148,15 @@ const seed = {
 };
 
 const storageKey = "griffy-store-system-v1";
-const apiBase = "http://127.0.0.1:3789/api";
+
+function configuredApiBase() {
+  const fromQuery = new URLSearchParams(window.location.search).get("apiBase");
+  const configured = window.GRIFFY_API_BASE || fromQuery || localStorage.getItem("griffy-api-base") || "http://127.0.0.1:3789/api";
+  const clean = String(configured).trim().replace(/\/+$/, "");
+  return clean.endsWith("/api") ? clean : `${clean}/api`;
+}
+
+const apiBase = configuredApiBase();
 let apiOnline = false;
 let state = loadState();
 let session = JSON.parse(localStorage.getItem("griffy-session") || "null");
@@ -198,13 +206,26 @@ function saveState() {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(`${apiBase}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || "Falha na API local.");
-  return body;
+  const { timeoutMs = 18000, headers = {}, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${apiBase}${path}`, {
+      headers: { "Content-Type": "application/json", ...headers },
+      ...fetchOptions,
+      signal: controller.signal,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || "Falha na API local.");
+    return body;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("Tempo esgotado ao comunicar com o banco/API. Verifique a internet ou a VPS e tente novamente.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function apiSend(path, body, method = "POST") {
@@ -239,9 +260,16 @@ function setSession(user) {
 async function startSession(user) {
   session = { id: user.id, name: user.name, role: user.role };
   localStorage.setItem("griffy-session", JSON.stringify(session));
-  if (apiOnline) await reloadState();
   if (enforceCashLoginRules()) return;
   render();
+  if (apiOnline) {
+    reloadState()
+      .then(() => {
+        enforceCashLoginRules();
+        render();
+      })
+      .catch((error) => notify(error.message, inferNotificationType(error.message)));
+  }
 }
 
 function enforceCashLoginRules() {
@@ -2762,15 +2790,23 @@ async function checkout() {
   if (apiOnline) {
     try {
       const savedSale = await apiSend("/sales", salePayload);
+      const sale = { ...savedSale, items: salePayload.items, payments };
+      state.sales = [sale, ...(state.sales || [])];
+      state.products = (state.products || []).map((product) => {
+        const soldItem = salePayload.items.find((item) => item.id === product.id);
+        return soldItem ? { ...product, stock: Math.max(0, Number(product.stock || 0) - Number(soldItem.qty || 0)) } : product;
+      });
+      state.cash.movements = [
+        { id: uid("m"), shiftId: state.cash.shift?.id, saleId: sale.id, type: "Entrada", description: `Venda ${sale.id}`, amount: total, date: state.cash.shift?.businessDate || businessDate(), operator: session.name },
+        ...(state.cash.movements || []),
+      ];
       cart = [];
       ui.discount = 0;
       paymentRows = [{ method: "Pix", amount: "", details: "", installments: "" }];
-      await reloadState();
+      modal = simpleNoteEnabled() ? { type: "receipt", id: savedSale.id } : null;
+      notify("Venda finalizada e salva no MySQL.", "success");
       render();
       return;
-      alert("Venda finalizada e salva no MySQL.");
-      modal = simpleNoteEnabled() ? { type: "receipt", id: savedSale.id } : null;
-      render();
     } catch (error) {
       alert(error.message);
     }
@@ -2838,7 +2874,7 @@ async function deleteProduct(id) {
   try {
     if (apiOnline) {
       await apiSend(`/products/${id}`, { operator: session.name, operatorRole: session.role }, "DELETE");
-      await reloadState();
+      state.products = state.products.filter((p) => p.id !== id);
     } else {
       state.products = state.products.filter((p) => p.id !== id);
       saveState();
@@ -2865,7 +2901,7 @@ async function resetProducts() {
   try {
     if (apiOnline) {
       await apiSend("/products/reset", { operator: session.name, operatorRole: session.role, confirmation });
-      await reloadState();
+      state.products = [];
     } else {
       state.products = [];
       saveState();
@@ -3054,7 +3090,7 @@ async function deleteOperator(id) {
   if (apiOnline) {
     try {
       await apiSend(`/users/${id}`, {}, "DELETE");
-      await reloadState();
+      state.users = state.users.map((user) => (user.id === id ? { ...user, active: false } : user));
       render();
     } catch (error) {
       alert(error.message);
@@ -3186,8 +3222,23 @@ async function closeShift(event) {
     try {
       const result = await apiSend("/cash/close", data);
       lastCloseReport = { ...report, ...result, closedAt: new Date().toISOString() };
+      const closedShift = {
+        ...(state.cash.shift || {}),
+        status: "closed",
+        closingAmount: Number(result.closingAmount || data.closingAmount || 0),
+        expectedAmount: Number(result.expectedAmount || 0),
+        differenceAmount: Number(result.differenceAmount || 0),
+        closedAt: lastCloseReport.closedAt,
+        notes: data.notes || "",
+      };
+      state.cash.shifts = [closedShift, ...(state.cash.shifts || []).filter((shift) => shift.id !== closedShift.id)].slice(0, 20);
+      state.cash.open = false;
+      state.cash.shift = null;
+      state.cash.operator = null;
+      state.cash.openingAmount = 0;
+      state.cash.movements = [];
       modal = { type: "cashCloseReport" };
-      await reloadState();
+      notify(`Turno fechado. Diferenca: ${money.format(result.differenceAmount)}`, "success");
       render();
       return;
       alert(`Turno fechado. Diferença: ${money.format(result.differenceAmount)}`);
@@ -3271,6 +3322,85 @@ function exportMonthlyReport() {
   URL.revokeObjectURL(url);
 }
 
+function upsertById(list = [], item, prepend = false) {
+  const source = Array.isArray(list) ? list : [];
+  const index = source.findIndex((entry) => entry.id === item.id);
+  if (index >= 0) return source.map((entry, current) => (current === index ? { ...entry, ...item } : entry));
+  return prepend ? [item, ...source] : [...source, item];
+}
+
+function applyApiSave(path, payload, result, method = "POST") {
+  const cleanPath = path.split("?")[0];
+  if (/^\/products\/[^/]+\/stock$/.test(cleanPath)) {
+    const productId = cleanPath.split("/")[2];
+    const qty = Number(payload.qty || 0);
+    const delta = payload.type === "Entrada" ? qty : -qty;
+    state.products = (state.products || []).map((product) =>
+      product.id === productId ? { ...product, stock: Math.max(0, Number(product.stock || 0) + delta) } : product,
+    );
+    return true;
+  }
+  if (cleanPath === "/products" || /^\/products\/[^/]+$/.test(cleanPath)) {
+    state.products = upsertById(state.products, { ...result, stock: Number(result.stock || 0), min: Number(result.min || 0), cost: Number(result.cost || 0), price: Number(result.price || 0), wholesalePrice: Number(result.wholesalePrice || 0) }, method === "POST");
+    return true;
+  }
+  if (/^\/repair-parts\/[^/]+\/movements$/.test(cleanPath)) {
+    const partId = cleanPath.split("/")[2];
+    state.repairParts = (state.repairParts || []).map((part) => (part.id === partId ? { ...part, stock: Number(result.stock || part.stock || 0) } : part));
+    state.repairPartMovements = [{ ...result, partId, partName: state.repairParts.find((part) => part.id === partId)?.name || "", date: new Date().toISOString() }, ...(state.repairPartMovements || [])].slice(0, 100);
+    return true;
+  }
+  if (cleanPath === "/repair-parts" || /^\/repair-parts\/[^/]+$/.test(cleanPath)) {
+    state.repairParts = upsertById(state.repairParts, { ...result, stock: Number(result.stock || 0), min: Number(result.min || 0), cost: Number(result.cost || 0), active: result.active !== false }, method === "POST");
+    return true;
+  }
+  if (cleanPath === "/services" || /^\/services\/[^/]+$/.test(cleanPath)) {
+    const existing = (state.services || []).find((service) => service.id === result.id);
+    state.services = upsertById(state.services, { ...existing, ...result, openedAt: existing?.openedAt || result.openedAt || businessDate(), events: existing?.events || [] }, method === "POST");
+    return true;
+  }
+  if (cleanPath === "/documents" || /^\/documents\/[^/]+$/.test(cleanPath)) {
+    state.documents = upsertById(state.documents, result, true);
+    return true;
+  }
+  if (cleanPath === "/customers") {
+    state.customers = upsertById(state.customers, result);
+    return true;
+  }
+  if (cleanPath === "/users" || /^\/users\/[^/]+$/.test(cleanPath)) {
+    state.users = upsertById(state.users, { ...result, active: result.active !== false }, method === "POST");
+    return true;
+  }
+  if (cleanPath === "/settings") {
+    state.settings = { ...(state.settings || {}), ...payload };
+    return true;
+  }
+  if (cleanPath === "/cash/open") {
+    state.cash.open = true;
+    state.cash.shift = {
+      id: result.id,
+      name: result.shiftName || payload.shiftName || "Turno",
+      operator: result.operator || payload.operator || session?.name || "",
+      openingAmount: Number(result.openingAmount || payload.openingAmount || 0),
+      businessDate: result.businessDate || payload.businessDate || businessDate(),
+      openedAt: result.openedAt || new Date().toISOString(),
+      status: "open",
+    };
+    state.cash.operator = state.cash.shift.operator;
+    state.cash.openingAmount = state.cash.shift.openingAmount;
+    state.cash.movements = [];
+    return true;
+  }
+  if (cleanPath === "/cash/movements") {
+    state.cash.movements = [
+      { ...result, shiftId: state.cash.shift?.id, amount: Number(result.amount || payload.amount || 0), date: state.cash.shift?.businessDate || businessDate() },
+      ...(state.cash.movements || []),
+    ];
+    return true;
+  }
+  return false;
+}
+
 async function issueFiscal(id) {
   if (!fiscalEnabled()) {
     alert("A nota simples esta ativa. Ative o fiscal nas configuracoes para emitir NF.");
@@ -3312,9 +3442,9 @@ function successMessageForPath(path, method = "POST") {
 
 async function runApiSave(path, payload, method = "POST") {
   try {
-    await apiSend(path, payload, method);
+    const result = await apiSend(path, payload, method);
     modal = null;
-    await reloadState();
+    if (!applyApiSave(path, payload, result, method)) await reloadState();
     notify(successMessageForPath(path, method), "success");
     render();
   } catch (error) {

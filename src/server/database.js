@@ -12,7 +12,8 @@ const config = {
   password: process.env.MYSQL_PASSWORD || "",
   database: process.env.MYSQL_DATABASE || "griffy_store",
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 5,
+  connectTimeout: 8000,
   namedPlaceholders: true,
 };
 

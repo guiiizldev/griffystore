@@ -20,6 +20,7 @@
     "check": "node --check app.js && node --check src/electron/main.js && node --check src/server/api.js && node --check src/server/database.js && node --check src/server/fiscal.js && node --check src/server/schema.js && node --check src/server/public.js"
   },
   "dependencies": {
+    "@zxing/browser": "^0.1.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "mysql2": "^3.11.5"
@@ -43,6 +44,8 @@
       "assets/**/*",
       "store/**/*",
       "store-app/dist/**/*",
+      "scanner/**/*",
+      "timeclock/**/*",
       "database/**/*",
       "src/**/*",
       "package.json"
