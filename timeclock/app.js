@@ -180,7 +180,12 @@ function employeeView() {
         ${canAdmin ? `<button class="secondary" type="button" onclick="loadAdminSummary()">Painel admin</button>` : ""}
       </header>
       <div class="actions">
-        ${["Entrada", "Intervalo inicio", "Intervalo fim", "Saida"].map((type) => `<button class="punch-action" type="button" onclick="punch('${type}')"><span>${type}</span></button>`).join("")}
+        ${[
+          { type: "Entrada", label: "Entrada" },
+          { type: "Intervalo inicio", label: "Inicio intervalo" },
+          { type: "Intervalo fim", label: "Fim intervalo" },
+          { type: "Saida", label: "Saida" },
+        ].map((item) => `<button class="punch-action" type="button" onclick="punch('${item.type}')"><span>${item.label}</span></button>`).join("")}
       </div>
       <div class="notice">
         Ao bater ponto, o sistema registra selfie, GPS, aparelho e IP para validacao administrativa.
