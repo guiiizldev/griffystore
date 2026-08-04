@@ -7,17 +7,35 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main>
-      <img src="/assets/logoretangular-enhanced.png" alt="Griffy Store" />
-      <h1>Scanner de codigo</h1>
-      <p>Use a camera do celular ou digite o codigo manualmente.</p>
-      <video id="video" playsinline muted></video>
-      <form id="manualForm">
-        <input id="code" autocomplete="off" inputmode="text" placeholder="Codigo de barras" required />
-        <button type="submit">Enviar codigo</button>
+    <main class="scanner-shell">
+      <header class="scanner-header">
+        <img src="/assets/logoretangular-enhanced.png" alt="Griffy Store" />
+        <div>
+          <h1>Scanner</h1>
+          <p>Leitura de produtos para o caixa</p>
+        </div>
+      </header>
+
+      <section class="camera-panel">
+        <div class="camera-frame">
+          <video id="video" playsinline muted></video>
+          <span class="scan-line" aria-hidden="true"></span>
+          <span class="corner top-left" aria-hidden="true"></span>
+          <span class="corner top-right" aria-hidden="true"></span>
+          <span class="corner bottom-left" aria-hidden="true"></span>
+          <span class="corner bottom-right" aria-hidden="true"></span>
+        </div>
+        <button id="start" type="button">Iniciar camera</button>
+        <div id="status" role="status">Pronto para iniciar.</div>
+      </section>
+
+      <form class="manual-panel" id="manualForm">
+        <label for="code">Codigo manual</label>
+        <div class="manual-row">
+          <input id="code" autocomplete="off" inputmode="text" placeholder="Digite ou cole o codigo" required />
+          <button type="submit">Enviar</button>
+        </div>
       </form>
-      <button id="start" type="button">Iniciar camera</button>
-      <div id="status"></div>
     </main>
     <script src="vendor/zxing-browser.min.js"></script>
     <script src="app.js"></script>

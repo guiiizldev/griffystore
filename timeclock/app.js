@@ -150,7 +150,7 @@ function loginView() {
       <label>PIN
         <input name="pin" type="password" inputmode="numeric" autocomplete="current-password" required />
       </label>
-      <button type="submit">Entrar</button>
+      <button class="primary" type="submit">Entrar</button>
       ${statusText ? `<span class="status">${statusText}</span>` : ""}
     </form>
   </section>`;
@@ -162,10 +162,14 @@ function employeeView() {
   const canAdmin = ["admin", "gerente"].includes(session?.role);
   return `<section class="shell">
     <aside>
-      <img src="/assets/logoretangular-enhanced.png" alt="Griffy Store" />
-      <strong>${session.name}</strong>
-      <span>${roleName(session.role)}</span>
-      <button type="button" onclick="logout(); render()">Sair</button>
+      <div class="aside-brand">
+        <img src="/assets/logoretangular-enhanced.png" alt="Griffy Store" />
+      </div>
+      <div class="user-card">
+        <strong>${session.name}</strong>
+        <span>${roleName(session.role)}</span>
+      </div>
+      <button class="ghost" type="button" onclick="logout(); render()">Sair</button>
     </aside>
     <main>
       <header>
@@ -173,10 +177,10 @@ function employeeView() {
           <h1>Meu ponto</h1>
           <p>${new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</p>
         </div>
-        ${canAdmin ? `<button type="button" onclick="loadAdminSummary()">Painel admin</button>` : ""}
+        ${canAdmin ? `<button class="secondary" type="button" onclick="loadAdminSummary()">Painel admin</button>` : ""}
       </header>
       <div class="actions">
-        ${["Entrada", "Intervalo inicio", "Intervalo fim", "Saida"].map((type) => `<button type="button" onclick="punch('${type}')">${type}</button>`).join("")}
+        ${["Entrada", "Intervalo inicio", "Intervalo fim", "Saida"].map((type) => `<button class="punch-action" type="button" onclick="punch('${type}')"><span>${type}</span></button>`).join("")}
       </div>
       <div class="notice">
         Ao bater ponto, o sistema registra selfie, GPS, aparelho e IP para validacao administrativa.
@@ -220,10 +224,11 @@ function adminView() {
       </div>
       <input id="month" type="month" value="${month}" onchange="loadAdminSummary()" />
     </div>
-    <table>
-      <thead><tr><th>Funcionario</th><th>Data</th><th>Entrada</th><th>Saida</th><th>Atraso</th><th>Local</th><th>Foto</th></tr></thead>
-      <tbody>
-        ${rows.map((row) => {
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Funcionario</th><th>Data</th><th>Entrada</th><th>Saida</th><th>Atraso</th><th>Local</th><th>Foto</th></tr></thead>
+        <tbody>
+          ${rows.map((row) => {
           const firstEntry = (adminSummary.entries || []).find((entry) => entry.userId === row.userId && String(entry.at).slice(0, 10) === row.date && entry.type === "Entrada");
           return `<tr>
           <td>${row.userName}</td>
@@ -235,8 +240,9 @@ function adminView() {
           <td>${firstEntry?.photoData ? `<img class="thumb" src="${firstEntry.photoData}" alt="Selfie" />` : "-"}</td>
         </tr>`;
         }).join("") || `<tr><td colspan="7">Sem registros neste mes.</td></tr>`}
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
     <form class="settings-grid" onsubmit="saveTimeSettings(event)">
       <h3>Local permitido</h3>
       <label>Latitude<input name="storeLatitude" value="${adminSummary.settings?.["timeclock.store_latitude"] || ""}" placeholder="-22.0000000" /></label>
