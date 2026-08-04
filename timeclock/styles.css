@@ -105,8 +105,10 @@ p {
 }
 
 .brand img {
-  width: 168px;
+  width: clamp(190px, 54vw, 240px);
   height: auto;
+  aspect-ratio: 3 / 1;
+  object-fit: contain;
 }
 
 .brand p {
@@ -167,8 +169,10 @@ aside {
 }
 
 .aside-brand img {
-  width: 178px;
+  width: min(196px, 100%);
   height: auto;
+  aspect-ratio: 3 / 1;
+  object-fit: contain;
 }
 
 .user-card {
@@ -367,7 +371,7 @@ th {
   }
 
   .aside-brand img {
-    width: 146px;
+    width: 174px;
   }
 
   aside .ghost {
@@ -406,7 +410,7 @@ th {
   }
 
   .brand img {
-    width: 148px;
+    width: 188px;
   }
 
   .panel {

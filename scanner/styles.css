@@ -75,8 +75,10 @@ input {
 }
 
 .scanner-header img {
-  width: 126px;
+  width: clamp(156px, 44vw, 190px);
   height: auto;
+  aspect-ratio: 3 / 1;
+  object-fit: contain;
   flex: 0 0 auto;
 }
 
@@ -229,7 +231,7 @@ video {
   }
 
   .scanner-header img {
-    width: 112px;
+    width: 148px;
   }
 
   .manual-row {
