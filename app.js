@@ -1227,12 +1227,26 @@ function daySales(date = state.cash.shift?.businessDate || businessDate()) {
 
 function paymentSummary(sales = shiftSales()) {
   return sales.reduce((summary, sale) => {
-    for (const payment of salePayments(sale)) {
+    for (const payment of salePaymentsForSummary(sale)) {
       const method = payment.method || "Pix";
       summary[method] = (summary[method] || 0) + Number(payment.amount || 0);
     }
     return summary;
   }, {});
+}
+
+function salePaymentsForSummary(sale) {
+  const payments = salePayments(sale).map((payment) => ({ ...payment, amount: Number(payment.amount || 0) }));
+  let change = saleChange(sale);
+  if (change <= 0) return payments;
+  return payments
+    .map((payment) => {
+      if (payment.method !== "Dinheiro" || change <= 0) return payment;
+      const discount = Math.min(payment.amount, change);
+      change -= discount;
+      return { ...payment, amount: payment.amount - discount };
+    })
+    .filter((payment) => payment.amount > 0);
 }
 
 function paymentSummaryHtml(sales = shiftSales()) {
