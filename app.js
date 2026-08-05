@@ -1262,6 +1262,18 @@ function sumPayment(summary, pattern) {
   return Object.entries(summary).reduce((total, [method, amount]) => (pattern.test(method.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()) ? total + Number(amount || 0) : total), 0);
 }
 
+function manualCashMovementDelta(movements = state.cash.movements || []) {
+  return movements
+    .filter((movement) => !isSaleMovement(movement) && !isCancellationMovement(movement))
+    .reduce((sum, movement) => sum + (movement.type === "Entrada" ? Number(movement.amount || 0) : -Number(movement.amount || 0)), 0);
+}
+
+function physicalCashExpected(sales = shiftSales(), movements = state.cash.movements || []) {
+  const openingAmount = Number(state.cash.openingAmount || 0);
+  const netCashSales = sumPayment(paymentSummary(sales), /dinheiro/);
+  return openingAmount + netCashSales + manualCashMovementDelta(movements);
+}
+
 function isCancellationMovement(movement) {
   return String(movement.description || "").toLowerCase().includes("cancelamento");
 }
@@ -1286,7 +1298,7 @@ function buildCashCloseReport(formData = {}, result = {}) {
   const movements = state.cash.movements || [];
   const openingAmount = Number(state.cash.openingAmount || 0);
   const closingAmount = Number(result.closingAmount ?? formData.closingAmount ?? 0);
-  const expectedAmount = Number(result.expectedAmount ?? cashBalance());
+  const expectedAmount = Number(result.expectedAmount ?? physicalCashExpected(sales, movements));
   const estornos = movements.filter((movement) => isCashOut(movement) && isCancellationMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const sangrias = movements.filter((movement) => isCashOut(movement) && !isCancellationMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const reforcos = movements.filter((movement) => movement.type === "Entrada" && !isSaleMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
@@ -2376,14 +2388,15 @@ function openShiftFormLegacy() {
 }
 
 function closeShiftFormLegacy() {
+  const expectedCash = physicalCashExpected();
   return formShell("Fechar turno de caixa", "closeShift(event)", `
     <div class="totals">
       <div><span>Turno</span><strong>${state.cash.shift?.name || "-"}</strong></div>
-      <div><span>Valor esperado</span><strong>${money.format(cashBalance())}</strong></div>
+      <div><span>Valor esperado</span><strong>${money.format(expectedCash)}</strong></div>
     </div>
     <h3 class="subhead">Resumo por pagamento</h3>
     ${paymentSummaryHtml()}
-    <label>Valor contado no caixa<input name="closingAmount" type="number" min="0" step="0.01" value="${cashBalance().toFixed(2)}" required /></label>
+    <label>Valor contado no caixa<input name="closingAmount" type="number" min="0" step="0.01" value="${expectedCash.toFixed(2)}" required /></label>
     <label>Observação<textarea name="notes" placeholder="Opcional"></textarea></label>`);
 }
 
@@ -2403,16 +2416,17 @@ function openShiftForm() {
 }
 
 function closeShiftForm() {
+  const expectedCash = physicalCashExpected();
   return formShell("Fechar turno de caixa", "closeShift(event)", `
     <div class="totals">
       <div><span>Turno</span><strong>${state.cash.shift?.name || "-"}</strong></div>
       <div><span>Dia operacional</span><strong>${state.cash.shift?.businessDate || businessDate()}</strong></div>
-      <div><span>Valor esperado</span><strong>${money.format(cashBalance())}</strong></div>
+      <div><span>Valor esperado</span><strong>${money.format(expectedCash)}</strong></div>
     </div>
     ${isAfterClosingTime() ? '<div class="notice-box"><strong>Fim do expediente</strong><span>Fechamento recomendado apos as 21:00.</span></div>' : ""}
     <h3 class="subhead">Resumo por pagamento</h3>
     ${paymentSummaryHtml()}
-    <label>Valor contado no caixa<input name="closingAmount" type="number" min="0" step="0.01" value="${cashBalance().toFixed(2)}" required /></label>
+    <label>Valor contado no caixa<input name="closingAmount" type="number" min="0" step="0.01" value="${expectedCash.toFixed(2)}" required /></label>
     <label>Observacao<textarea name="notes" placeholder="Opcional"></textarea></label>`);
 }
 
@@ -2526,10 +2540,7 @@ function roleName(role) {
 }
 
 function cashBalance() {
-  return state.cash.movements.reduce(
-    (sum, m) => sum + (m.type === "Entrada" ? m.amount : -m.amount),
-    Number(state.cash.openingAmount || 0),
-  );
+  return physicalCashExpected();
 }
 
 function cartTotal() {
