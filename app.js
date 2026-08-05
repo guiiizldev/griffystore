@@ -288,11 +288,6 @@ function enforceCashLoginRules() {
     return true;
   }
 
-  if (usesCash && state.cash.open && isAfterClosingTime()) {
-    view = "reports";
-    alert("Horario de fechamento da loja atingido (21:00). Feche o turno de caixa no fim do expediente.");
-  }
-
   if (usesCash && !state.cash.open) {
     view = "pos";
     modal = { type: "openShift" };
