@@ -1610,7 +1610,7 @@ function createApp(options = {}) {
       res.status(409).json({ error: "Nao existe turno aberto para fechar." });
       return;
     }
-    const expected = await expectedPhysicalShiftAmount(shift.id, shift.opening_amount);
+    const expected = await expectedTurnoverShiftAmount(shift.id);
     const closing = Number(req.body.closingAmount || 0);
     const difference = closing - expected;
     await query(
@@ -1698,6 +1698,37 @@ async function expectedPhysicalShiftAmount(shiftId, openingAmount) {
     { shiftId },
   );
   return toNumber(openingAmount) + cashSales + toNumber(movementRows[0].entradas) - toNumber(movementRows[0].saidas);
+}
+
+async function expectedTurnoverShiftAmount(shiftId) {
+  const saleRows = await query(
+    `SELECT
+       s.id,
+       s.payment,
+       s.total,
+       CASE
+         WHEN COUNT(sp.sale_id) = 0 THEN s.total
+         ELSE COALESCE(SUM(sp.amount), 0)
+       END AS received_total
+     FROM sales s
+     LEFT JOIN sale_payments sp ON sp.sale_id = s.id
+     WHERE s.shift_id = :shiftId AND COALESCE(s.status, 'active') <> 'canceled'
+     GROUP BY s.id, s.payment, s.total`,
+    { shiftId },
+  );
+  const received = saleRows.reduce((sum, sale) => sum + toNumber(sale.received_total), 0);
+  const movementRows = await query(
+    `SELECT
+       COALESCE(SUM(CASE WHEN type = 'Entrada' THEN amount ELSE 0 END), 0) AS entradas,
+       COALESCE(SUM(CASE WHEN type <> 'Entrada' THEN amount ELSE 0 END), 0) AS saidas
+     FROM cash_movements
+     WHERE shift_id = :shiftId
+       AND sale_id IS NULL
+       AND description NOT LIKE 'Venda %'
+       AND LOWER(description) NOT LIKE '%cancelamento%'`,
+    { shiftId },
+  );
+  return received + toNumber(movementRows[0].entradas) - toNumber(movementRows[0].saidas);
 }
 
 async function expectedShiftAmount(shiftId, openingAmount) {

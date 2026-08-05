@@ -1235,6 +1235,16 @@ function paymentSummary(sales = shiftSales()) {
   }, {});
 }
 
+function grossPaymentSummary(sales = shiftSales()) {
+  return sales.reduce((summary, sale) => {
+    for (const payment of salePayments(sale)) {
+      const method = payment.method || "Pix";
+      summary[method] = (summary[method] || 0) + Number(payment.amount || 0);
+    }
+    return summary;
+  }, {});
+}
+
 function salePaymentsForSummary(sale) {
   const payments = salePayments(sale).map((payment) => ({ ...payment, amount: Number(payment.amount || 0) }));
   let change = saleChange(sale);
@@ -1274,6 +1284,12 @@ function physicalCashExpected(sales = shiftSales(), movements = state.cash.movem
   return openingAmount + netCashSales + manualCashMovementDelta(movements);
 }
 
+function shiftTurnoverExpected(sales = shiftSales(), movements = state.cash.movements || []) {
+  const grossPayments = grossPaymentSummary(sales);
+  const received = Object.values(grossPayments).reduce((sum, amount) => sum + Number(amount || 0), 0);
+  return received + manualCashMovementDelta(movements);
+}
+
 function isCancellationMovement(movement) {
   return String(movement.description || "").toLowerCase().includes("cancelamento");
 }
@@ -1294,11 +1310,11 @@ function formatDateTime(value = new Date()) {
 
 function buildCashCloseReport(formData = {}, result = {}) {
   const sales = shiftSales();
-  const payments = paymentSummary(sales);
+  const payments = grossPaymentSummary(sales);
   const movements = state.cash.movements || [];
   const openingAmount = Number(state.cash.openingAmount || 0);
   const closingAmount = Number(result.closingAmount ?? formData.closingAmount ?? 0);
-  const expectedAmount = Number(result.expectedAmount ?? physicalCashExpected(sales, movements));
+  const expectedAmount = Number(result.expectedAmount ?? shiftTurnoverExpected(sales, movements));
   const estornos = movements.filter((movement) => isCashOut(movement) && isCancellationMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const sangrias = movements.filter((movement) => isCashOut(movement) && !isCancellationMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const reforcos = movements.filter((movement) => movement.type === "Entrada" && !isSaleMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
@@ -1472,13 +1488,14 @@ function salesForShift(shift) {
 
 function cashReportFromShift(shift) {
   const sales = salesForShift(shift);
-  const payments = paymentSummary(sales);
+  const payments = grossPaymentSummary(sales);
   const movements = cashMovementsForShift(shift);
   const openingAmount = Number(shift?.openingAmount || 0);
   const estornos = movements.filter((movement) => isCashOut(movement) && isCancellationMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const sangrias = movements.filter((movement) => isCashOut(movement) && !isCancellationMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
   const reforcos = movements.filter((movement) => movement.type === "Entrada" && !isSaleMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
-  const expectedAmount = Number(shift?.expectedAmount ?? openingAmount + movements.reduce((sum, movement) => sum + (movement.type === "Entrada" ? Number(movement.amount || 0) : -Number(movement.amount || 0)), 0));
+  const calculatedExpectedAmount = shiftTurnoverExpected(sales, movements);
+  const expectedAmount = Number(sales.length || movements.length ? calculatedExpectedAmount : shift?.expectedAmount ?? calculatedExpectedAmount);
   const closingAmount = Number(shift?.closingAmount ?? expectedAmount);
   return {
     id: shift?.id || "",
@@ -2388,7 +2405,7 @@ function openShiftFormLegacy() {
 }
 
 function closeShiftFormLegacy() {
-  const expectedCash = physicalCashExpected();
+  const expectedCash = shiftTurnoverExpected();
   return formShell("Fechar turno de caixa", "closeShift(event)", `
     <div class="totals">
       <div><span>Turno</span><strong>${state.cash.shift?.name || "-"}</strong></div>
@@ -2416,7 +2433,7 @@ function openShiftForm() {
 }
 
 function closeShiftForm() {
-  const expectedCash = physicalCashExpected();
+  const expectedCash = shiftTurnoverExpected();
   return formShell("Fechar turno de caixa", "closeShift(event)", `
     <div class="totals">
       <div><span>Turno</span><strong>${state.cash.shift?.name || "-"}</strong></div>
@@ -2540,7 +2557,7 @@ function roleName(role) {
 }
 
 function cashBalance() {
-  return physicalCashExpected();
+  return shiftTurnoverExpected();
 }
 
 function cartTotal() {
