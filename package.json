@@ -16,6 +16,7 @@
     "db:export:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/export-local-db.ps1",
     "db:import:vps": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/import-db-to-vps.ps1",
     "db:config": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/configure-db.ps1",
+    "fix:latest-cash-close": "node scripts/fix-latest-cash-close.js",
     "import:stock": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/import-stock-xlsx.ps1",
     "cleanup:categories": "node scripts/cleanup-categories.js",
     "check": "node --check app.js && node --check src/electron/main.js && node --check src/server/api.js && node --check src/server/database.js && node --check src/server/fiscal.js && node --check src/server/schema.js && node --check src/server/public.js"
