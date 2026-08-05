@@ -24,10 +24,6 @@ function businessDate() {
   return today();
 }
 
-function isShiftFromAnotherBusinessDay(shift) {
-  return shift?.business_date && formatDate(shift.business_date) !== businessDate();
-}
-
 function uid(prefix) {
   return `${prefix}${Date.now()}${Math.random().toString(16).slice(2, 7)}`;
 }
@@ -1376,10 +1372,6 @@ function createApp(options = {}) {
       res.status(409).json({ error: "Abra um turno de caixa antes de lancar movimentos." });
       return;
     }
-    if (isShiftFromAnotherBusinessDay(shift)) {
-      res.status(409).json({ error: "O caixa aberto pertence a outro dia operacional. Feche esse caixa antes de continuar." });
-      return;
-    }
     const movement = {
       id: uid("m"),
       shiftId: shift.id,
@@ -1399,10 +1391,6 @@ function createApp(options = {}) {
     const shift = await getOpenShift();
     if (!shift) {
       res.status(409).json({ error: "Abra um turno de caixa antes de finalizar vendas." });
-      return;
-    }
-    if (isShiftFromAnotherBusinessDay(shift)) {
-      res.status(409).json({ error: "O caixa aberto pertence a outro dia operacional. Feche esse caixa antes de vender." });
       return;
     }
     const sale = {
@@ -1496,10 +1484,6 @@ function createApp(options = {}) {
     const shift = await getOpenShift();
     if (!shift) {
       res.status(409).json({ error: "Abra um turno de caixa antes de cancelar vendas." });
-      return;
-    }
-    if (isShiftFromAnotherBusinessDay(shift)) {
-      res.status(409).json({ error: "O caixa aberto pertence a outro dia operacional. Feche esse caixa antes de cancelar vendas." });
       return;
     }
     const rows = await query("SELECT * FROM sales WHERE id = :id LIMIT 1", { id: req.params.id });

@@ -280,14 +280,6 @@ async function startSession(user) {
 function enforceCashLoginRules() {
   if (!session) return false;
   const usesCash = canAccess("pos");
-  if (usesCash && state.cash.open && state.cash.shift?.businessDate && state.cash.shift.businessDate !== businessDate()) {
-    view = "reports";
-    modal = { type: "closeShift" };
-    alert("Existe um caixa aberto de outro dia operacional. Feche esse caixa antes de continuar.");
-    render();
-    return true;
-  }
-
   if (usesCash && !state.cash.open) {
     view = "pos";
     modal = { type: "openShift" };
