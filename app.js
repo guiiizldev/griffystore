@@ -2729,7 +2729,7 @@ async function pullMobileScan() {
     return;
   }
   try {
-    const scan = await apiSend("/barcode-scans/consume", {});
+    const scan = await consumeBarcodeScan();
     if (!scan.code) {
       alert("Nenhum codigo enviado pelo celular.");
       return;
@@ -2748,15 +2748,33 @@ async function pullMobileScan() {
   }
 }
 
+async function consumeBarcodeScan() {
+  return apiSend("/barcode-scans/consume", {});
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForBarcodeScan({ attempts = 25, interval = 1000 } = {}) {
+  for (let index = 0; index < attempts; index += 1) {
+    const scan = await consumeBarcodeScan();
+    if (scan.code) return scan;
+    await wait(interval);
+  }
+  return { code: "" };
+}
+
 async function pullScanToProductCode() {
   if (!apiOnline) {
     alert("Scanner mobile precisa da API conectada.");
     return;
   }
   try {
-    const scan = await apiSend("/barcode-scans/consume", {});
+    notify("Aguardando leitura do scanner no celular...", "info");
+    const scan = await waitForBarcodeScan();
     if (!scan.code) {
-      alert("Nenhum codigo enviado pelo celular.");
+      notify("Nenhum codigo recebido. Leia o produto no celular e tente novamente.", "warn");
       return;
     }
     const codeInput = document.querySelector('.modal input[name="code"]');

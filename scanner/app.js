@@ -2,6 +2,7 @@ const statusEl = document.getElementById("status");
 const codeEl = document.getElementById("code");
 const video = document.getElementById("video");
 const startButton = document.getElementById("start");
+const cameraFrame = document.querySelector(".camera-frame");
 let detector = null;
 let scanning = false;
 let lastCode = "";
@@ -10,6 +11,16 @@ let zxingControls = null;
 
 function setStatus(message) {
   statusEl.textContent = message;
+}
+
+function setScanningActive(active) {
+  cameraFrame?.classList.toggle("is-scanning", active);
+}
+
+function flashScanSuccess() {
+  if (!cameraFrame) return;
+  cameraFrame.classList.add("scan-success");
+  setTimeout(() => cameraFrame.classList.remove("scan-success"), 900);
 }
 
 async function submitCode(code) {
@@ -24,6 +35,7 @@ async function submitCode(code) {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || "Nao foi possivel enviar.");
   setStatus(`Codigo enviado: ${clean}`);
+  flashScanSuccess();
   codeEl.value = "";
   setTimeout(() => {
     lastCode = "";
@@ -74,6 +86,7 @@ async function startNativeScanner() {
   video.srcObject = stream;
   await video.play();
   scanning = true;
+  setScanningActive(true);
   startButton.textContent = "Pausar camera";
   setStatus("Camera ativa. Aponte para o codigo.");
   scanLoop();
@@ -82,6 +95,7 @@ async function startNativeScanner() {
 async function startZxingScanner() {
   const reader = new ZXingBrowser.BrowserMultiFormatReader();
   scanning = true;
+  setScanningActive(true);
   startButton.textContent = "Pausar camera";
   setStatus("Camera ativa com leitor compativel. Aponte para o codigo.");
   zxingControls = await reader.decodeFromConstraints(
@@ -100,6 +114,7 @@ async function startZxingScanner() {
 
 function stopCamera() {
   scanning = false;
+  setScanningActive(false);
   detector = null;
   zxingControls?.stop?.();
   zxingControls = null;
