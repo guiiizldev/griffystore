@@ -1768,10 +1768,23 @@ function productFormFull() {
   const product = modal.id ? state.products.find((p) => p.id === modal.id) || {} : {};
   return formShell(modal.id ? "Editar produto" : "Cadastrar produto", "saveProduct(event)", `
     <div class="split">
-      <div class="field-with-action">
-        <label>Codigo<input name="code" value="${product.code || ""}" /></label>
-        <button class="btn" type="button" onclick="pullScanToProductCode()">Scanner</button>
-      </div>
+      <label class="code-scan-field">Codigo
+        <span class="input-with-icon">
+          <input name="code" value="${product.code || ""}" />
+          <button class="icon-btn scan-code-btn" type="button" onclick="pullScanToProductCode()" title="Puxar codigo do scanner" aria-label="Puxar codigo do scanner">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7V5h2" />
+              <path d="M18 5h2v2" />
+              <path d="M20 17v2h-2" />
+              <path d="M6 19H4v-2" />
+              <path d="M7 8v8" />
+              <path d="M10 8v8" />
+              <path d="M14 8v8" />
+              <path d="M17 8v8" />
+            </svg>
+          </button>
+        </span>
+      </label>
       <label>Nome<input name="name" value="${product.name || ""}" required /></label>
       <label>Categoria<select name="category">${categoryOptions(product.category || "")}</select></label>
       <label>Subcategoria<input name="subcategory" value="${product.subcategory || ""}" /></label>

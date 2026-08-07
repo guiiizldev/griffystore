@@ -716,6 +716,52 @@ th {
   white-space: nowrap;
 }
 
+.input-with-icon {
+  position: relative;
+  display: block;
+}
+
+.input-with-icon input {
+  padding-right: 52px;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scan-code-btn {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  width: 38px;
+  min-height: 34px;
+  height: 34px;
+  padding: 0;
+  color: #0b0d10;
+  background: var(--accent);
+  border: 1px solid #d49a00;
+  border-radius: 8px;
+  transform: translateY(-50%);
+}
+
+.scan-code-btn:hover {
+  background: #ffd45a;
+}
+
+.scan-code-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .status-board {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
