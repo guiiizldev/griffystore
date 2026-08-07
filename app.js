@@ -1768,7 +1768,10 @@ function productFormFull() {
   const product = modal.id ? state.products.find((p) => p.id === modal.id) || {} : {};
   return formShell(modal.id ? "Editar produto" : "Cadastrar produto", "saveProduct(event)", `
     <div class="split">
-      <label>Codigo<input name="code" value="${product.code || ""}" /></label>
+      <div class="field-with-action">
+        <label>Codigo<input name="code" value="${product.code || ""}" /></label>
+        <button class="btn" type="button" onclick="pullScanToProductCode()">Scanner</button>
+      </div>
       <label>Nome<input name="name" value="${product.name || ""}" required /></label>
       <label>Categoria<select name="category">${categoryOptions(product.category || "")}</select></label>
       <label>Subcategoria<input name="subcategory" value="${product.subcategory || ""}" /></label>
@@ -2740,6 +2743,35 @@ async function pullMobileScan() {
     }
     addCart(product.id);
     alert(`Produto adicionado pelo scanner: ${product.name}`);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function pullScanToProductCode() {
+  if (!apiOnline) {
+    alert("Scanner mobile precisa da API conectada.");
+    return;
+  }
+  try {
+    const scan = await apiSend("/barcode-scans/consume", {});
+    if (!scan.code) {
+      alert("Nenhum codigo enviado pelo celular.");
+      return;
+    }
+    const codeInput = document.querySelector('.modal input[name="code"]');
+    if (!codeInput) {
+      alert("Campo de codigo nao encontrado.");
+      return;
+    }
+    codeInput.value = scan.code;
+    codeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const duplicated = state.products.find((product) => product.id !== modal.id && String(product.code || "").toLowerCase() === String(scan.code).toLowerCase());
+    if (duplicated) {
+      notify(`Codigo ${scan.code} ja esta cadastrado em ${duplicated.name}.`, "warn");
+      return;
+    }
+    notify(`Codigo ${scan.code} preenchido no produto.`, "success");
   } catch (error) {
     alert(error.message);
   }
