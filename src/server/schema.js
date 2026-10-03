@@ -294,6 +294,44 @@ const statements = [
     used TINYINT(1) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`,
+  `CREATE TABLE IF NOT EXISTS time_clock_schedules (
+    user_id VARCHAR(40) NOT NULL,
+    effective_from DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    work_days VARCHAR(20) NOT NULL DEFAULT '',
+    updated_by VARCHAR(40) NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, effective_from),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS time_clock_swaps (
+    id VARCHAR(40) PRIMARY KEY,
+    requester_id VARCHAR(40) NOT NULL,
+    target_id VARCHAR(40) NOT NULL,
+    swap_date DATE NOT NULL,
+    requester_start TIME NOT NULL,
+    requester_end TIME NOT NULL,
+    target_start TIME NOT NULL,
+    target_end TIME NOT NULL,
+    reason VARCHAR(255) NOT NULL,
+    status ENUM('pending','accepted','rejected','canceled') NOT NULL DEFAULT 'pending',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    responded_at DATETIME NULL,
+    INDEX idx_time_swap_date (swap_date, status),
+    FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS time_clock_day_schedules (
+    user_id VARCHAR(40) NOT NULL,
+    schedule_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    swap_id VARCHAR(40) NOT NULL,
+    PRIMARY KEY (user_id, schedule_date),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (swap_id) REFERENCES time_clock_swaps(id) ON DELETE CASCADE
+  )`,
 ];
 
 const seeds = [
@@ -388,6 +426,7 @@ async function migrate() {
   await ensureColumn(connection, "time_clock_entries", "photo_data", "LONGTEXT NULL");
   await ensureColumn(connection, "time_clock_entries", "device_info", "VARCHAR(255) NULL");
   await ensureColumn(connection, "time_clock_entries", "ip_address", "VARCHAR(80) NULL");
+  await ensureColumn(connection, "time_clock_schedules", "work_days", "VARCHAR(20) NOT NULL DEFAULT ''");
   await ensureIndex(connection, "products", "idx_products_code_unique", "CREATE UNIQUE INDEX idx_products_code_unique ON products (code)");
   for (const name of categories) {
     await connection.query("INSERT IGNORE INTO categories (name) VALUES (?)", [name]);
@@ -467,4 +506,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { migrate };
+module.exports = { migrate, statements };

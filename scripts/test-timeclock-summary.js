@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const { timeClockSummary } = require("../src/server/api");
 
 function entry(type, hour, minute, day = 30) {
-  return { id: `${type}-${hour}-${minute}`, user_id: "employee", user_name: "Funcionario", entry_type: type, entry_at: new Date(2026, 8, day, hour, minute) };
+  return { id: `${type}-${hour}-${minute}`, user_id: "employee", user_name: "Funcionario", entry_type: type, entry_at: new Date(`2026-09-${day}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00-03:00`) };
 }
 
 for (const [hour, minute, expected] of [[8, 59, "on-time"], [9, 0, "on-time"], [9, 1, "late"], [9, 10, "late"], [9, 11, "absence"]]) {

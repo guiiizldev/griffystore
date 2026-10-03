@@ -1,6 +1,7 @@
 const apiBase = "/api";
 const tokenKey = "griffy-timeclock-token";
-const moneylessDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
+const storeTimezone = "America/Sao_Paulo";
+const moneylessDate = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short", timeZone: storeTimezone });
 
 let users = [];
 let session = JSON.parse(localStorage.getItem("griffy-timeclock-user") || "null");
@@ -15,18 +16,27 @@ let selectedMonth = localMonth();
 let adminLoading = false;
 let captureBusy = false;
 let installPrompt = null;
+let swapOptions = null;
+let swapLoading = false;
+let swapBusy = false;
+let swapOptionsRequest = 0;
 
 function icon(name) {
   return `<i data-lucide="${name}" aria-hidden="true"></i>`;
 }
 
 function switchTab(tab) {
-  if (captureBusy) return;
+  if (captureBusy || swapBusy) return;
   statusText = "";
   evidenceText = "";
   if (tab === "admin") {
     window.scrollTo(0, 0);
     return loadAdminSummary();
+  }
+  if (tab === "swaps") {
+    currentTab = tab;
+    window.scrollTo(0, 0);
+    return refreshSwaps();
   }
   currentTab = tab;
   render();
@@ -35,7 +45,7 @@ function switchTab(tab) {
 
 function updateClock() {
   const element = document.getElementById("live-clock");
-  if (element) element.textContent = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (element) element.textContent = clock(new Date());
 }
 
 function localMonth() {
@@ -56,7 +66,7 @@ function duration(minutes) {
 }
 
 function clock(value) {
-  return value ? new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--";
+  return value ? new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: storeTimezone }) : "--:--";
 }
 
 function roleName(role) {
@@ -122,6 +132,8 @@ function logout() {
   selectedEmployee = "";
   statusText = "";
   evidenceText = "";
+  swapOptions = null;
+  swapOptionsRequest++;
   localStorage.removeItem(tokenKey);
   localStorage.removeItem("griffy-timeclock-user");
 }
@@ -134,6 +146,11 @@ async function punch(type) {
   if (captureBusy) return;
   if (!navigator.onLine) {
     statusText = "Sem conexao. O ponto precisa ser confirmado pela loja.";
+    render();
+    return;
+  }
+  if (!me?.schedule) {
+    statusText = "Solicite ao administrador a configuracao do seu horario.";
     render();
     return;
   }
@@ -364,16 +381,17 @@ function employeeView() {
       <header class="page-header">
         <div>
           <span class="eyebrow">${currentTab === "punch" ? `OLA, ${escapeHtml(session.name.split(" ")[0].toUpperCase())}` : "GRIFFY STORE"}</span>
-          <h1>${{ punch: "Minha jornada", history: "Meu historico", account: "Minha conta", admin: "Minha equipe" }[currentTab]}</h1>
+          <h1>${{ punch: "Minha jornada", history: "Meu historico", account: "Minha conta", admin: "Minha equipe", swaps: "Trocas de horario" }[currentTab]}</h1>
           <p>${new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</p>
         </div>
       </header>
       ${statusText ? `<div class="notice ${evidenceText ? "ok" : ""}" role="status">${icon(evidenceText ? "circle-check" : "info")}<span>${escapeHtml(statusText)}</span></div>` : ""}
-      ${currentTab === "admin" && canAdmin ? adminView() : currentTab === "account" ? accountView() : currentTab === "history" ? historyView(entries, summary) : punchView(entries, summary)}
+      ${currentTab === "admin" && canAdmin ? adminView() : currentTab === "swaps" ? swapsView() : currentTab === "account" ? accountView() : currentTab === "history" ? historyView(entries, summary) : punchView(entries, summary)}
     </main>
     <nav class="tabs bottom-nav" aria-label="Areas do ponto">
       ${tabButton("punch", "Ponto", "clock-3")}
       ${tabButton("history", "Historico", "calendar-days")}
+      ${tabButton("swaps", "Trocas", "arrow-left-right")}
       ${canAdmin ? tabButton("admin", "Equipe", "users-round") : ""}
       ${tabButton("account", "Conta", "user-round")}
     </nav>
@@ -381,16 +399,133 @@ function employeeView() {
 }
 
 function tabButton(id, label, symbol) {
-  return `<button class="${currentTab === id ? "active" : ""}" type="button" ${currentTab === id ? 'aria-current="page"' : ""} onclick="switchTab('${id}')" ${captureBusy ? "disabled" : ""}>${icon(symbol)}<span>${label}</span></button>`;
+  return `<button class="${currentTab === id ? "active" : ""}" type="button" ${currentTab === id ? 'aria-current="page"' : ""} onclick="switchTab('${id}')" ${captureBusy || swapBusy ? "disabled" : ""}>${icon(symbol)}<span>${label}</span></button>`;
+}
+
+async function refreshSwaps() {
+  swapLoading = true;
+  swapOptions = null;
+  swapOptionsRequest++;
+  render();
+  try { await loadMe(); }
+  catch (error) { statusText = error.message; }
+  swapLoading = false;
+  render();
+  if (currentTab === "swaps") await loadSwapOptions();
+}
+
+async function loadSwapOptions() {
+  const date = document.querySelector('[name="swapDate"]')?.value;
+  if (!date) return;
+  const request = ++swapOptionsRequest;
+  swapOptions = null;
+  const select = document.querySelector('[name="targetId"]');
+  const previous = select?.value;
+  if (select) { select.disabled = true; select.innerHTML = '<option value="">Carregando horarios...</option>'; }
+  const submit = document.querySelector('.swap-form button[type="submit"]');
+  if (submit) submit.disabled = true;
+  try {
+    const options = await api(`/timeclock/swaps/options?date=${encodeURIComponent(date)}`);
+    if (request !== swapOptionsRequest || currentTab !== "swaps") return;
+    swapOptions = options;
+    select.innerHTML = '<option value="">Escolha um colega</option>' + options.employees.map((employee) => `<option value="${escapeHtml(employee.id)}" ${!employee.schedule || employee.schedule.workingDay === false || employee.schedule.source === "swap" ? "disabled" : ""}>${escapeHtml(employee.name)} - ${employee.schedule ? employee.schedule.workingDay === false ? "Folga" : `${employee.schedule.startTime} / ${employee.schedule.endTime}${employee.schedule.source === "swap" ? " (Ja tem troca)" : ""}` : "Sem horario definido"}</option>`).join("");
+    if (options.employees.some((employee) => employee.id === previous && employee.schedule?.source === "regular" && employee.schedule.workingDay !== false)) select.value = previous;
+    select.disabled = !options.ownSchedule || options.ownSchedule.workingDay === false || options.ownSchedule.source === "swap";
+    submit.disabled = select.disabled;
+    document.querySelector('.swap-own-schedule').textContent = options.ownSchedule ? options.ownSchedule.workingDay === false ? "Voce esta de folga neste dia." : `Seu horario em ${dayLabel(date)}: ${options.ownSchedule.startTime} - ${options.ownSchedule.endTime}${options.ownSchedule.source === "swap" ? " (troca aceita)" : ""}` : "Seu horario precisa ser configurado pelo administrador.";
+  } catch (error) {
+    if (request !== swapOptionsRequest || currentTab !== "swaps") return;
+    document.querySelector('.swap-own-schedule').textContent = error.message;
+  }
+}
+
+async function requestSwap(event) {
+  event.preventDefault();
+  if (swapBusy || !swapOptions) return;
+  const data = Object.fromEntries(new FormData(event.currentTarget));
+  swapBusy = true;
+  event.currentTarget.querySelector('button[type="submit"]').disabled = true;
+  try {
+    await api("/timeclock/swaps", { method: "POST", body: JSON.stringify({ date: data.swapDate, targetId: data.targetId, reason: data.reason }) });
+    statusText = "Pedido enviado. A troca so vale depois do aceite do colega.";
+    evidenceText = "ok";
+  } catch (error) { statusText = error.message; evidenceText = ""; }
+  swapBusy = false;
+  await refreshSwaps();
+}
+
+async function respondSwap(button) {
+  if (swapBusy) return;
+  swapBusy = true;
+  button.closest('.swap-card').querySelectorAll('button').forEach((item) => { item.disabled = true; });
+  try {
+    await api(`/timeclock/swaps/${encodeURIComponent(button.dataset.swapId)}/respond`, { method: "POST", body: JSON.stringify({ action: button.dataset.action }) });
+    statusText = { accept: "Troca aceita. Os horarios valem apenas na data do pedido.", reject: "Pedido recusado.", cancel: "Pedido cancelado." }[button.dataset.action];
+    evidenceText = "ok";
+  } catch (error) { statusText = error.message; evidenceText = ""; }
+  swapBusy = false;
+  await refreshSwaps();
+}
+
+function swapCard(swap, actionable = true) {
+  const labels = { pending: "Aguardando aceite", accepted: "Aceita", rejected: "Recusada", canceled: "Cancelada", expired: "Expirada" };
+  const incoming = swap.targetId === session.id;
+  const pending = swap.status === "pending" && actionable;
+  const responseButton = (action, label, symbol) => `<button type="button" class="${action === "accept" ? "primary" : "secondary"}" data-swap-id="${escapeHtml(swap.id)}" data-action="${action}" onclick="respondSwap(this)" ${swapBusy ? "disabled" : ""}>${icon(symbol)} ${label}</button>`;
+  return `<article class="swap-card"><div class="swap-head"><strong>${dayLabel(swap.date)}</strong><span class="swap-status ${swap.status}">${labels[swap.status] || swap.status}</span></div>
+    <div class="swap-person"><span>${escapeHtml(swap.requesterName)}</span><strong>${swap.requesterStart} - ${swap.requesterEnd} ${icon("arrow-right")} ${swap.targetStart} - ${swap.targetEnd}</strong></div>
+    <div class="swap-person"><span>${escapeHtml(swap.targetName)}</span><strong>${swap.targetStart} - ${swap.targetEnd} ${icon("arrow-right")} ${swap.requesterStart} - ${swap.requesterEnd}</strong></div>
+    <p>${escapeHtml(swap.reason)}</p>
+    ${pending ? `<div class="swap-actions">${incoming ? responseButton("reject", "Recusar", "x") + responseButton("accept", "Aceitar", "check") : responseButton("cancel", "Cancelar pedido", "x")}</div>` : ""}
+  </article>`;
+}
+
+function swapsView() {
+  const date = me?.scheduleDate || new Date().toLocaleDateString("en-CA");
+  const swaps = me?.swaps || [];
+  const inbox = swaps.filter((swap) => swap.status === "pending" && swap.targetId === session.id);
+  const rest = swaps.filter((swap) => !inbox.includes(swap));
+  return `<section class="tab-page swaps-page">
+    <section><div class="section-heading"><h2>Pedidos recebidos</h2><span>${inbox.length} pendentes</span><button class="icon-button secondary" type="button" aria-label="Atualizar pedidos" title="Atualizar pedidos" onclick="refreshSwaps()" ${swapBusy || swapLoading ? "disabled" : ""}>${icon("refresh-cw")}</button></div>${inbox.map((swap) => swapCard(swap)).join("") || `<div class="empty">Nenhum pedido aguardando seu aceite.</div>`}</section>
+    <details class="admin-settings" open><summary>Solicitar troca por um dia</summary><form class="settings-grid swap-form" onsubmit="requestSwap(event)">
+      <label>Dia da troca<input name="swapDate" type="date" value="${date}" min="${date}" required onchange="loadSwapOptions()" /></label>
+      <div class="swap-own-schedule muted">Carregando horarios...</div>
+      <label>Trocar com<select name="targetId" required disabled><option value="">Carregando...</option></select></label>
+      <label>Motivo<textarea name="reason" rows="3" maxlength="255" required placeholder="Motivo do pedido"></textarea></label>
+      <button type="submit" disabled>${icon("send")} Enviar pedido</button>
+    </form></details>
+    <section><h2>Historico de pedidos</h2>${rest.map((swap) => swapCard(swap)).join("") || `<div class="empty">Nenhum pedido enviado.</div>`}</section>
+  </section>`;
+}
+
+async function saveEmployeeSchedule(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form));
+  data.workDays = new FormData(form).getAll("workDays").map(Number);
+  form.querySelector('button[type="submit"]').disabled = true;
+  try {
+    await api("/timeclock/admin/schedules", { method: "POST", body: JSON.stringify(data) });
+    await loadMe();
+    await loadAdminSummary();
+    statusText = "Horario individual salvo.";
+    evidenceText = "ok";
+    render();
+  } catch (error) {
+    statusText = error.message;
+    evidenceText = "";
+    render();
+  }
 }
 
 function punchView(entries, summary) {
-  const today = new Date().toLocaleDateString("en-CA");
-  const todayEntries = entries.filter((entry) => new Date(entry.at).toLocaleDateString("en-CA") === today);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: storeTimezone });
+  const todayEntries = entries.filter((entry) => new Date(entry.at).toLocaleDateString("en-CA", { timeZone: storeTimezone }) === today);
   const latest = todayEntries[0];
   const status = latest?.type === "Saida" ? "Jornada encerrada" : latest?.type === "Intervalo inicio" ? "Em intervalo" : latest ? "Jornada em andamento" : "Aguardando entrada";
   return `<section class="tab-page">
     <div class="journey-clock"><div><span class="eyebrow">AGORA</span><strong id="live-clock">${clock(new Date())}</strong></div><span class="journey-state ${latest ? "started" : ""}"><i></i>${status}</span></div>
+    <div class="schedule-strip">${icon("calendar-clock")}<div><span>Horario de hoje${me?.schedule?.source === "swap" ? " - troca aceita" : ""}</span><strong>${me?.schedule ? me.schedule.workingDay === false ? "Folga" : `${me.schedule.startTime} - ${me.schedule.endTime}` : "Horario nao configurado"}</strong></div></div>
     <div class="section-heading"><h2>Registrar ponto</h2><span>${todayEntries.length} hoje</span></div>
     <div class="actions">
       ${[
@@ -424,6 +559,7 @@ function accountView() {
       <div class="profile-lines">
         <div><span>Nome</span><strong>${escapeHtml(session.name)}</strong></div>
         <div><span>Cargo</span><strong>${roleName(session.role)}</strong></div>
+        <div><span>Horario habitual</span><strong>${me?.regularSchedule ? `${me.regularSchedule.startTime} - ${me.regularSchedule.endTime}` : "Nao configurado"}</strong></div>
         <div><span>Facial</span><strong>${profile.faceUpdatedAt ? `Atualizado em ${moneylessDate.format(new Date(profile.faceUpdatedAt))}` : "Nao cadastrado"}</strong></div>
       </div>
     </article>
@@ -457,14 +593,14 @@ function summaryRow(day) {
 
 function attendanceBadge(day) {
   const status = day.attendanceStatus || (day.lateMinutes === null ? "missing" : day.lateMinutes === 0 ? "on-time" : day.lateMinutes <= 10 ? "late" : "absence");
-  const text = { missing: "Sem entrada", "on-time": "No horario", late: `${day.lateMinutes} min atraso`, absence: `Falta por atraso (${day.lateMinutes} min)` }[status];
+  const text = { missing: "Sem entrada", awaiting: "Aguardando entrada", off: "Folga", unconfigured: "Sem horario definido", "on-time": "No horario", late: `${day.lateMinutes} min atraso`, absence: day.absenceReason === "missing" ? "Falta (sem entrada)" : `Falta por atraso (${day.lateMinutes} min)` }[status];
   return `<strong class="attendance-badge ${status}"><i aria-hidden="true"></i>${text}</strong>`;
 }
 
 function exportAttendance() {
   const rows = (adminSummary?.summary || []).filter((row) => row.userId === selectedEmployee);
   const csvCell = (value) => `"${String(value ?? "").replace(/^[=+@-]/, "'$&").replace(/"/g, '""')}"`;
-  const lines = [["Funcionario", "Data", "Entrada", "Saida", "Atraso (min)", "Horas apuradas", "Situacao"], ...rows.map((day) => [day.userName, dayLabel(day.date), clock(day.firstIn), clock(day.lastOut), day.lateMinutes, day.workedMinutes === null ? "Pendente" : duration(day.workedMinutes), { "on-time": "No horario", late: "Atraso", absence: "Falta por atraso", missing: "Sem entrada" }[day.attendanceStatus]])];
+  const lines = [["Funcionario", "Data", "Entrada prevista", "Saida prevista", "Origem do horario", "Entrada", "Saida", "Atraso (min)", "Horas apuradas", "Situacao"], ...rows.map((day) => [day.userName, dayLabel(day.date), day.expectedStart, day.expectedEnd, day.scheduleSource === "swap" ? "Troca aceita" : "Habitual", clock(day.firstIn), clock(day.lastOut), day.lateMinutes, day.workedMinutes === null ? "Pendente" : duration(day.workedMinutes), { "on-time": "No horario", late: "Atraso", absence: day.absenceReason === "missing" ? "Falta (sem entrada)" : "Falta por atraso", awaiting: "Aguardando entrada", off: "Folga", missing: "Sem entrada", unconfigured: "Sem horario definido" }[day.attendanceStatus]])];
   const url = URL.createObjectURL(new Blob(["\uFEFF", lines.map((line) => line.map(csvCell).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
@@ -478,7 +614,7 @@ function entryRow(entry) {
     <span class="entry-symbol ${entry.type === "Saida" ? "exit" : ""}">${icon({ Entrada: "log-in", Saida: "log-out", "Intervalo inicio": "coffee", "Intervalo fim": "rotate-ccw" }[entry.type] || "clock-3")}</span>
     <div>
       <strong>${escapeHtml(entry.type)}</strong>
-      <span>${new Date(entry.at).toLocaleDateString("pt-BR")}</span>
+      <span>${new Date(entry.at).toLocaleDateString("pt-BR", { timeZone: storeTimezone })}</span>
       <small>${escapeHtml(entry.locationStatus || "Sem local")}</small>
     </div>
     <strong class="entry-time">${clock(entry.at)}</strong>
@@ -497,7 +633,7 @@ function adminView() {
     <div class="admin-head">
       <div>
         <h2>Acompanhamento da equipe</h2>
-        <p>${employees.length} funcionarios &middot; ${allRows.length} dias registrados</p>
+        <p>${employees.length} funcionarios &middot; ${allRows.length} dias apurados</p>
       </div>
       <div class="admin-tools">
         <label>Periodo<input id="month" type="month" value="${selectedMonth}" onchange="loadAdminSummary()" ${adminLoading ? "disabled" : ""} /></label>
@@ -508,24 +644,34 @@ function adminView() {
       <select onchange="selectedEmployee=this.value; render()">${employees.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === selectedEmployee ? "selected" : ""}>${escapeHtml(item.name)} - ${escapeHtml(roleName(item.role))}${item.active === 0 ? " (Inativo)" : ""}</option>`).join("")}</select>
     </label>
     <div class="employee-heading"><div class="avatar">${escapeHtml((employee?.name || "?").slice(0, 1).toUpperCase())}</div><div><h2>${escapeHtml(employee?.name || "Selecione um funcionario")}</h2><p>${escapeHtml(roleName(employee?.role || ""))}</p></div></div>
+    ${employee ? `<details class="admin-settings employee-schedule" ${employee.schedule ? "" : "open"}><summary>Horario habitual ${employee.schedule ? `${employee.schedule.startTime} - ${employee.schedule.endTime}` : "Nao configurado"}</summary>
+      <form class="settings-grid" onsubmit="saveEmployeeSchedule(event)">
+        <input name="userId" type="hidden" value="${escapeHtml(employee.id)}" />
+        <div class="time-fields"><label>Entrada<input name="startTime" type="time" required value="${employee.schedule?.startTime || ""}" /></label><label>Saida<input name="endTime" type="time" required value="${employee.schedule?.endTime || ""}" /></label></div>
+        <fieldset class="work-days"><legend>Dias de trabalho</legend>${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"].map((name, index) => `<label><input type="checkbox" name="workDays" value="${index}" ${employee.schedule?.workDays?.includes(index) ? "checked" : ""} /><span>${name}</span></label>`).join("")}</fieldset>
+        <label>Valido a partir de<input name="effectiveFrom" type="date" min="${adminSummary?.scheduleDate || ""}" value="${adminSummary?.scheduleDate || ""}" required /></label>
+        <button type="submit">${icon("save")} Salvar horario</button>
+      </form>
+      ${(employee.scheduledChanges || []).map((change) => `<div class="row"><span>A partir de ${dayLabel(change.effectiveFrom)}</span><strong>${change.startTime} - ${change.endTime}</strong></div>`).join("")}
+    </details>` : ""}
     <div class="metrics">
-      <article><span>Dias registrados</span><strong>${rows.length}</strong></article>
-      <article><span>Atrasos / faltas por atraso</span><strong>${rows.filter((day) => day.attendanceStatus === "late").length} / ${rows.filter((day) => day.attendanceStatus === "absence").length}</strong></article>
+      <article><span>Dias registrados</span><strong>${rows.filter((day) => day.entries?.length).length}</strong></article>
+      <article><span>Atrasos / faltas</span><strong>${rows.filter((day) => day.attendanceStatus === "late").length} / ${rows.filter((day) => day.attendanceStatus === "absence").length}</strong></article>
       <article><span>Atraso acumulado</span><strong>${duration(totalLate)}</strong></article>
       <article><span>Horas apuradas</span><strong>${duration(worked)}</strong></article>
     </div>
     <div class="attendance-grid">
-      <section class="attendance-section"><h2>Pontualidade</h2><p>Entrada prevista: ${escapeHtml(adminSummary?.settings?.["timeclock.start_time"] || "09:00")}</p>
-        <div class="attendance-legend"><span class="on-time">No horario</span><span class="late">Atraso ate ${escapeHtml(adminSummary?.settings?.["timeclock.late_tolerance_minutes"] ?? 10)} min</span><span class="absence">Falta por atraso</span></div>
-        ${rows.length ? rows.map((day) => `<details class="attendance-day"><summary><span>${dayLabel(day.date)}</span>${attendanceBadge(day)}</summary><div class="day-details"><div><span>Entrada</span><strong>${clock(day.firstIn)}</strong></div><div><span>Saida</span><strong>${clock(day.lastOut)}</strong></div><div><span>Horas apuradas</span><strong>${day.workedMinutes === null ? "Pendente" : duration(day.workedMinutes)}</strong></div><div><span>Marcacoes</span><strong>${day.entries?.length || 0}</strong></div></div>${day.incomplete ? `<p class="pending">Marcacoes incompletas</p>` : ""}</details>`).join("") : `<div class="empty">Sem marcacoes neste periodo.</div>`}
+      <section class="attendance-section"><h2>Pontualidade</h2><p>Horario habitual: ${employee?.schedule ? `${employee.schedule.startTime} - ${employee.schedule.endTime}` : "Nao configurado"}</p>
+        <div class="attendance-legend"><span class="on-time">No horario</span><span class="late">Atraso ate ${escapeHtml(adminSummary?.settings?.["timeclock.late_tolerance_minutes"] ?? 10)} min</span><span class="absence">Falta</span></div>
+        ${rows.length ? rows.map((day) => `<details class="attendance-day"><summary><span>${dayLabel(day.date)}</span>${attendanceBadge(day)}</summary><div class="day-details"><div><span>Entrada prevista</span><strong>${day.expectedStart || "Nao configurada"}</strong></div><div><span>Saida prevista</span><strong>${day.expectedEnd || "Nao configurada"}</strong></div><div><span>Entrada</span><strong>${clock(day.firstIn)}</strong></div><div><span>Saida</span><strong>${clock(day.lastOut)}</strong></div><div><span>Horas apuradas</span><strong>${day.workedMinutes === null ? "Pendente" : duration(day.workedMinutes)}</strong></div><div><span>Marcacoes</span><strong>${day.entries?.length || 0}</strong></div></div>${day.scheduleSource === "swap" ? `<p class="swap-note">Troca de horario aceita</p>` : ""}${day.incomplete ? `<p class="pending">Marcacoes incompletas</p>` : ""}</details>`).join("") : `<div class="empty">Sem marcacoes neste periodo.</div>`}
       </section>
       <section class="attendance-section"><h2>Marcacoes e evidencias</h2><p>${entries.length} registros no periodo</p>
         ${entries.length ? entries.map((entry) => `<details class="evidence-item" data-entry-id="${escapeHtml(entry.id)}"><summary><span>${escapeHtml(entry.type)}<small>${moneylessDate.format(new Date(entry.at))}</small></span><span class="${entry.locationStatus === "Fora do raio" ? "absence" : "muted"}">${escapeHtml(entry.locationStatus || "Sem local")}</span></summary><div class="evidence-detail"><div class="evidence-photo"><span>Foto</span></div><div><p>Distancia: ${entry.distanceMeters == null ? "Indisponivel" : `${entry.distanceMeters} m`}</p><p>Precisao GPS: ${entry.accuracy == null ? "Indisponivel" : `${Math.round(entry.accuracy)} m`}</p>${entry.latitude != null && entry.longitude != null ? `<a href="https://www.google.com/maps?q=${Number(entry.latitude)},${Number(entry.longitude)}" target="_blank" rel="noopener noreferrer">Ver localizacao</a>` : ""}</div></div></details>`).join("") : `<div class="empty">Sem evidencias neste periodo.</div>`}
       </section>
     </div>
+    <section class="attendance-section"><h2>Trocas deste funcionario</h2>${(adminSummary?.swaps || []).filter((swap) => swap.requesterId === selectedEmployee || swap.targetId === selectedEmployee).map((swap) => swapCard(swap, false)).join("") || `<div class="empty">Nenhum pedido de troca.</div>`}</section>
     <details class="admin-settings"><summary>Configuracoes de jornada e local</summary>
     <form class="settings-grid" onsubmit="saveTimeSettings(event)">
-      <label>Entrada prevista<input name="startTime" type="time" required value="${escapeHtml(adminSummary?.settings?.["timeclock.start_time"] || "09:00")}" /></label>
       <label>Limite de atraso (min)<input name="lateToleranceMinutes" type="number" min="0" max="120" required value="${escapeHtml(adminSummary?.settings?.["timeclock.late_tolerance_minutes"] ?? 10)}" /></label>
       <label>Latitude<input name="storeLatitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_latitude"] || "")}" placeholder="-22.0000000" /></label>
       <label>Longitude<input name="storeLongitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_longitude"] || "")}" placeholder="-43.0000000" /></label>

@@ -7,6 +7,7 @@ const { query, db, closeDb } = require("./database");
 const { migrate } = require("./schema");
 const { issueFiscalDocument } = require("./fiscal");
 const packageInfo = require("../../package.json");
+const { scheduleToday, clockParts, entryAtSql, entryBusinessDateSql, regularSchedule, effectiveSchedule, completeAttendance, loadScheduleData, loadSwaps, registerScheduling } = require("./timeclock-scheduling");
 
 function toNumber(value) {
   return Number(value || 0);
@@ -123,11 +124,10 @@ function distanceMeters(aLat, aLng, bLat, bLng) {
   return Math.round(earth * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)));
 }
 
-function timeClockSummary(entries, startTime = "09:00", tolerance = 10) {
+function timeClockSummary(entries, startTime = "09:00", tolerance = 10, scheduleForDay = null) {
   const byUserDay = new Map();
   for (const entry of entries) {
-    const at = new Date(entry.entry_at);
-    const day = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
+    const day = clockParts(entry.entry_at).date;
     const key = `${entry.user_id}:${day}`;
     if (!byUserDay.has(key)) {
       byUserDay.set(key, {
@@ -151,8 +151,9 @@ function timeClockSummary(entries, startTime = "09:00", tolerance = 10) {
   return Array.from(byUserDay.values()).map((item) => {
     const first = item.firstIn ? new Date(item.firstIn) : null;
     const last = item.lastOut ? new Date(item.lastOut) : null;
-    const [hour, minute] = startTime.split(":").map(Number);
-    const lateMinutes = first ? Math.max(0, first.getHours() * 60 + first.getMinutes() - hour * 60 - minute) : null;
+    const schedule = scheduleForDay ? scheduleForDay(item.userId, item.date) : { startTime, endTime: null, source: "regular" };
+    const [hour, minute] = (schedule?.startTime || "00:00").split(":").map(Number);
+    const lateMinutes = first && schedule && schedule.workingDay !== false ? Math.max(0, clockParts(first).minutes - hour * 60 - minute) : null;
     const ordered = [...item.entries].sort((a, b) => new Date(a.at) - new Date(b.at));
     let breakAt = null;
     let breakMinutes = 0;
@@ -165,8 +166,8 @@ function timeClockSummary(entries, startTime = "09:00", tolerance = 10) {
     }
     const incomplete = !first || !last || Boolean(breakAt);
     const workedMinutes = !incomplete ? Math.max(0, Math.round((last - first) / 60000 - breakMinutes)) : null;
-    const attendanceStatus = lateMinutes === null ? "missing" : lateMinutes === 0 ? "on-time" : lateMinutes <= Number(tolerance) ? "late" : "absence";
-    return { ...item, lateMinutes, workedMinutes, incomplete, attendanceStatus };
+    const attendanceStatus = !schedule ? "unconfigured" : schedule.workingDay === false ? "off" : lateMinutes === null ? "missing" : lateMinutes === 0 ? "on-time" : lateMinutes <= Number(tolerance) ? "late" : "absence";
+    return { ...item, lateMinutes, workedMinutes, incomplete, attendanceStatus, expectedStart: schedule?.startTime || null, expectedEnd: schedule?.endTime || null, scheduleSource: schedule?.source || null };
   }).sort((a, b) => b.date.localeCompare(a.date) || a.userName.localeCompare(b.userName));
 }
 
@@ -909,20 +910,29 @@ function createApp(options = {}) {
       res.status(401).json({ error: "Sessao expirada." });
       return;
     }
-    const [entries, profiles, timeSettings] = await Promise.all([
-      query("SELECT * FROM time_clock_entries WHERE user_id = :userId ORDER BY entry_at DESC LIMIT 120", { userId: user.id }),
+    const scheduleDate = scheduleToday();
+    const fromDate = new Date(Date.parse(`${scheduleDate}T12:00:00Z`) - 30 * 86400000).toISOString().slice(0, 10);
+    const [entries, profiles, timeSettings, scheduleData, swaps] = await Promise.all([
+      query(`SELECT id, user_id, user_name, entry_type, ${entryAtSql} AS entry_at, source, latitude, longitude, accuracy, distance_meters, location_status, device_info, ip_address, note FROM time_clock_entries WHERE user_id = :userId AND ${entryBusinessDateSql} >= :fromDate ORDER BY entry_at DESC`, { userId: user.id, fromDate }),
       query("SELECT user_id, face_photo_data, face_updated_at, updated_at FROM time_clock_profiles WHERE user_id = :userId LIMIT 1", { userId: user.id }),
       query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings WHERE setting_key LIKE 'timeclock.%'"),
+      loadScheduleData(query, user.id),
+      loadSwaps(query, user.id),
     ]);
     const profile = profiles[0] || {};
+    const tolerance = mapSettings(timeSettings)["timeclock.late_tolerance_minutes"] ?? 10;
     res.json({
       user,
+      scheduleDate,
+      schedule: effectiveSchedule(scheduleData, user.id, scheduleDate),
+      regularSchedule: regularSchedule(scheduleData, user.id, scheduleDate),
+      swaps,
       profile: {
         facePhotoData: profile.face_photo_data || "",
         faceUpdatedAt: profile.face_updated_at || profile.updated_at || null,
       },
       entries: entries.map(mapTimeEntry),
-      summary: timeClockSummary(entries, mapSettings(timeSettings)["timeclock.start_time"] || "09:00", mapSettings(timeSettings)["timeclock.late_tolerance_minutes"] ?? 10).slice(0, 31),
+      summary: completeAttendance(timeClockSummary(entries, "09:00", tolerance, (userId, date) => effectiveSchedule(scheduleData, userId, date)), scheduleData, [{ id: user.id, name: user.name, active: 1 }], fromDate, scheduleDate, tolerance),
     });
   });
 
@@ -991,12 +1001,27 @@ function createApp(options = {}) {
       ipAddress: String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].slice(0, 80),
       note: req.body.note || null,
     };
-    await query(
-      `INSERT INTO time_clock_entries
+    const connection = await db().getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute("SELECT id FROM users WHERE id = :userId FOR UPDATE", { userId: user.id });
+      const execute = async (sql, params) => (await connection.execute(sql, params))[0];
+      const scheduleData = await loadScheduleData(execute, user.id);
+      if (!effectiveSchedule(scheduleData, user.id, scheduleToday())) {
+        await connection.rollback();
+        return res.status(400).json({ error: "O administrador precisa configurar seu horario antes do registro de ponto." });
+      }
+      await connection.execute(
+        `INSERT INTO time_clock_entries
        (id, user_id, user_name, entry_type, source, latitude, longitude, accuracy, distance_meters, location_status, photo_data, device_info, ip_address, note)
        VALUES (:id, :userId, :userName, :type, :source, :latitude, :longitude, :accuracy, :distanceMeters, :locationStatus, :photoData, :deviceInfo, :ipAddress, :note)`,
-      entry,
-    );
+        entry,
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally { connection.release(); }
     res.json({ ok: true, entry });
   });
 
@@ -1006,15 +1031,22 @@ function createApp(options = {}) {
       res.status(403).json({ error: "Apenas administrador ou gerente." });
       return;
     }
-    const month = String(req.query.month || today().slice(0, 7));
+    const month = String(req.query.month || scheduleToday().slice(0, 7));
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: "Mes invalido." });
     const entries = await query(
-      "SELECT id, user_id, user_name, entry_type, entry_at, source, latitude, longitude, accuracy, distance_meters, location_status, device_info, ip_address, note FROM time_clock_entries WHERE DATE_FORMAT(entry_at, '%Y-%m') = :month ORDER BY entry_at ASC",
+      `SELECT id, user_id, user_name, entry_type, ${entryAtSql} AS entry_at, source, latitude, longitude, accuracy, distance_meters, location_status, device_info, ip_address, note FROM time_clock_entries WHERE DATE_FORMAT(${entryBusinessDateSql}, '%Y-%m') = :month ORDER BY entry_at ASC`,
       { month },
     );
     const settings = mapSettings(await query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings WHERE setting_key LIKE 'timeclock.%'"));
     const employees = await query("SELECT id, name, role, active FROM users WHERE role <> 'caixa' ORDER BY name");
-    res.json({ month, settings, employees, summary: timeClockSummary(entries, settings["timeclock.start_time"] || "09:00", settings["timeclock.late_tolerance_minutes"] ?? 10), entries: entries.map(mapTimeEntry) });
+    const scheduleData = await loadScheduleData(query);
+    const swaps = await loadSwaps(query);
+    const tolerance = settings["timeclock.late_tolerance_minutes"] ?? 10;
+    const monthEnd = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0, 12)).toISOString().slice(0, 10);
+    res.json({ month, settings, scheduleDate: scheduleToday(), swaps,
+      employees: employees.map((employee) => ({ ...employee, schedule: regularSchedule(scheduleData, employee.id, scheduleToday()),
+        scheduledChanges: scheduleData.schedules.filter((row) => row.user_id === employee.id && row.effectiveFrom > scheduleToday()).map((row) => ({ effectiveFrom: row.effectiveFrom, startTime: row.start_time.slice(0, 5), endTime: row.end_time.slice(0, 5) })) })),
+      summary: completeAttendance(timeClockSummary(entries, "09:00", tolerance, (userId, date) => effectiveSchedule(scheduleData, userId, date)), scheduleData, employees, `${month}-01`, monthEnd, tolerance), entries: entries.map(mapTimeEntry) });
   });
 
   app.get("/api/timeclock/admin/evidence/:id", async (req, res) => {
@@ -1023,6 +1055,8 @@ function createApp(options = {}) {
     if (!rows.length) return res.status(404).json({ error: "Marcacao nao encontrada." });
     res.set("Cache-Control", "no-store").json({ photoData: rows[0].photo_data || "" });
   });
+
+  registerScheduling(app, { query, db, requireRoleToken, uid });
 
   app.post("/api/timeclock/admin/settings", async (req, res) => {
     const admin = requireRoleToken(req, ["admin", "gerente"]);
