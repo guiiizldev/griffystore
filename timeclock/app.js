@@ -10,6 +10,30 @@ let adminSummary = null;
 let statusText = "";
 let evidenceText = "";
 let currentTab = "punch";
+let selectedEmployee = "";
+let selectedMonth = localMonth();
+let adminLoading = false;
+
+function localMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+}
+
+function dayLabel(date) {
+  return String(date).split("-").reverse().join("/");
+}
+
+function duration(minutes) {
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}min`;
+}
+
+function clock(value) {
+  return value ? new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "--:--";
+}
 
 function roleName(role) {
   return { admin: "Administrador", gerente: "Gerente", vendedor: "Vendedor", tecnico: "Tecnico" }[role] || role;
@@ -52,6 +76,8 @@ function logout() {
   session = null;
   me = null;
   adminSummary = null;
+  currentTab = "punch";
+  selectedEmployee = "";
   localStorage.removeItem(tokenKey);
   localStorage.removeItem("griffy-timeclock-user");
 }
@@ -202,15 +228,22 @@ async function collectEvidence() {
 }
 
 async function loadAdminSummary() {
-  const month = document.getElementById("month")?.value || new Date().toISOString().slice(0, 7);
+  if (adminLoading) return;
+  const month = document.getElementById("month")?.value || selectedMonth;
+  selectedMonth = month;
+  currentTab = "admin";
+  adminLoading = true;
+  adminSummary = null;
   statusText = "Carregando resumo...";
   render();
   try {
     adminSummary = await api(`/timeclock/admin/summary?month=${encodeURIComponent(month)}`);
+    if (!selectedEmployee) selectedEmployee = adminSummary.employees?.[0]?.id || adminSummary.summary?.[0]?.userId || "";
     statusText = "Resumo atualizado.";
   } catch (error) {
     statusText = error.message;
   }
+  adminLoading = false;
   render();
 }
 
@@ -254,20 +287,19 @@ function employeeView() {
     <main>
       <header>
         <div>
-          <h1>Meu ponto</h1>
+          <h1>${currentTab === "admin" ? "Gestao de ponto" : "Meu ponto"}</h1>
           <p>${new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</p>
         </div>
-        ${canAdmin ? `<button class="secondary" type="button" onclick="loadAdminSummary()">Painel admin</button>` : ""}
       </header>
       <nav class="tabs" aria-label="Areas do ponto">
         ${tabButton("punch", "Registrar")}
         ${tabButton("account", "Minha conta")}
         ${tabButton("history", "Historico")}
+        ${canAdmin ? `<button class="${currentTab === "admin" ? "active" : ""}" type="button" onclick="loadAdminSummary()">Equipe</button>` : ""}
       </nav>
       ${statusText ? `<div class="notice">${statusText}</div>` : ""}
       ${evidenceText ? `<div class="notice ok">${evidenceText}</div>` : ""}
-      ${currentTab === "account" ? accountView() : currentTab === "history" ? historyView(entries, summary) : punchView(entries, summary)}
-      ${adminSummary ? adminView() : ""}
+      ${currentTab === "admin" && canAdmin ? adminView() : currentTab === "account" ? accountView() : currentTab === "history" ? historyView(entries, summary) : punchView(entries, summary)}
     </main>
   </section>`;
 }
@@ -341,7 +373,25 @@ function historyView(entries, summary) {
 }
 
 function summaryRow(day) {
-  return `<div class="row"><span>${day.date}</span><strong>${day.lateMinutes ? `${day.lateMinutes} min atraso` : "No horario"}</strong></div>`;
+  return `<div class="row"><span>${dayLabel(day.date)}</span>${attendanceBadge(day)}</div>`;
+}
+
+function attendanceBadge(day) {
+  const status = day.attendanceStatus || (day.lateMinutes === null ? "missing" : day.lateMinutes === 0 ? "on-time" : day.lateMinutes <= 10 ? "late" : "absence");
+  const text = { missing: "Sem entrada", "on-time": "No horario", late: `${day.lateMinutes} min atraso`, absence: `Falta por atraso (${day.lateMinutes} min)` }[status];
+  return `<strong class="attendance-badge ${status}"><i aria-hidden="true"></i>${text}</strong>`;
+}
+
+function exportAttendance() {
+  const rows = (adminSummary?.summary || []).filter((row) => row.userId === selectedEmployee);
+  const csvCell = (value) => `"${String(value ?? "").replace(/^[=+@-]/, "'$&").replace(/"/g, '""')}"`;
+  const lines = [["Funcionario", "Data", "Entrada", "Saida", "Atraso (min)", "Horas apuradas", "Situacao"], ...rows.map((day) => [day.userName, dayLabel(day.date), clock(day.firstIn), clock(day.lastOut), day.lateMinutes, day.workedMinutes === null ? "Pendente" : duration(day.workedMinutes), { "on-time": "No horario", late: "Atraso", absence: "Falta por atraso", missing: "Sem entrada" }[day.attendanceStatus]])];
+  const url = URL.createObjectURL(new Blob(["\uFEFF", lines.map((line) => line.map(csvCell).join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `ponto-${selectedMonth}-${selectedEmployee}.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function entryRow(entry) {
@@ -356,43 +406,54 @@ function entryRow(entry) {
 }
 
 function adminView() {
-  const month = adminSummary?.month || new Date().toISOString().slice(0, 7);
-  const rows = adminSummary?.summary || [];
-  return `<section class="panel admin">
+  const allRows = adminSummary?.summary || [];
+  const employees = adminSummary?.employees || users;
+  const employee = employees.find((item) => item.id === selectedEmployee);
+  const rows = allRows.filter((row) => row.userId === selectedEmployee);
+  const entries = (adminSummary?.entries || []).filter((entry) => entry.userId === selectedEmployee).sort((a, b) => new Date(b.at) - new Date(a.at));
+  const totalLate = rows.reduce((sum, row) => sum + (row.lateMinutes || 0), 0);
+  const worked = rows.reduce((sum, row) => sum + (row.workedMinutes || 0), 0);
+  return `<section class="admin tab-page" aria-busy="${adminLoading}">
     <div class="admin-head">
       <div>
-        <h2>Painel administrativo</h2>
-        <p>Resumo mensal de pontualidade por funcionario.</p>
+        <h2>Acompanhamento da equipe</h2>
+        <p>${employees.length} funcionarios &middot; ${allRows.length} dias registrados</p>
       </div>
-      <input id="month" type="month" value="${month}" onchange="loadAdminSummary()" />
+      <div class="admin-tools">
+        <label>Periodo<input id="month" type="month" value="${selectedMonth}" onchange="loadAdminSummary()" ${adminLoading ? "disabled" : ""} /></label>
+        <button class="secondary" type="button" onclick="exportAttendance()" ${rows.length ? "" : "disabled"}>Exportar CSV</button>
+      </div>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Funcionario</th><th>Data</th><th>Entrada</th><th>Saida</th><th>Atraso</th><th>Local</th><th>Foto</th></tr></thead>
-        <tbody>
-          ${rows.map((row) => {
-          const firstEntry = (adminSummary.entries || []).find((entry) => entry.userId === row.userId && String(entry.at).slice(0, 10) === row.date && entry.type === "Entrada");
-          return `<tr>
-          <td>${row.userName}</td>
-          <td>${row.date}</td>
-          <td>${row.firstIn ? new Date(row.firstIn).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-"}</td>
-          <td>${row.lastOut ? new Date(row.lastOut).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "-"}</td>
-          <td>${row.lateMinutes || 0}</td>
-          <td>${firstEntry?.locationStatus || "-"}${firstEntry?.distanceMeters ? ` (${firstEntry.distanceMeters}m)` : ""}</td>
-          <td>${firstEntry?.photoData ? `<img class="thumb" src="${firstEntry.photoData}" alt="Selfie" />` : "-"}</td>
-        </tr>`;
-        }).join("") || `<tr><td colspan="7">Sem registros neste mes.</td></tr>`}
-        </tbody>
-      </table>
+    <label class="employee-filter">Funcionario
+      <select onchange="selectedEmployee=this.value; render()">${employees.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === selectedEmployee ? "selected" : ""}>${escapeHtml(item.name)} - ${escapeHtml(roleName(item.role))}${item.active === 0 ? " (Inativo)" : ""}</option>`).join("")}</select>
+    </label>
+    <div class="employee-heading"><div class="avatar">${escapeHtml((employee?.name || "?").slice(0, 1).toUpperCase())}</div><div><h2>${escapeHtml(employee?.name || "Selecione um funcionario")}</h2><p>${escapeHtml(roleName(employee?.role || ""))}</p></div></div>
+    <div class="metrics">
+      <article><span>Dias registrados</span><strong>${rows.length}</strong></article>
+      <article><span>Atrasos / faltas por atraso</span><strong>${rows.filter((day) => day.attendanceStatus === "late").length} / ${rows.filter((day) => day.attendanceStatus === "absence").length}</strong></article>
+      <article><span>Atraso acumulado</span><strong>${duration(totalLate)}</strong></article>
+      <article><span>Horas apuradas</span><strong>${duration(worked)}</strong></article>
     </div>
+    <div class="attendance-grid">
+      <section class="attendance-section"><h2>Pontualidade</h2><p>Entrada prevista: ${escapeHtml(adminSummary?.settings?.["timeclock.start_time"] || "09:00")}</p>
+        <div class="attendance-legend"><span class="on-time">No horario</span><span class="late">Atraso ate ${escapeHtml(adminSummary?.settings?.["timeclock.late_tolerance_minutes"] ?? 10)} min</span><span class="absence">Falta por atraso</span></div>
+        ${rows.length ? rows.map((day) => `<details class="attendance-day"><summary><span>${dayLabel(day.date)}</span>${attendanceBadge(day)}</summary><div class="day-details"><div><span>Entrada</span><strong>${clock(day.firstIn)}</strong></div><div><span>Saida</span><strong>${clock(day.lastOut)}</strong></div><div><span>Horas apuradas</span><strong>${day.workedMinutes === null ? "Pendente" : duration(day.workedMinutes)}</strong></div><div><span>Marcacoes</span><strong>${day.entries?.length || 0}</strong></div></div>${day.incomplete ? `<p class="pending">Marcacoes incompletas</p>` : ""}</details>`).join("") : `<div class="empty">Sem marcacoes neste periodo.</div>`}
+      </section>
+      <section class="attendance-section"><h2>Marcacoes e evidencias</h2><p>${entries.length} registros no periodo</p>
+        ${entries.length ? entries.map((entry) => `<details class="evidence-item" data-entry-id="${escapeHtml(entry.id)}"><summary><span>${escapeHtml(entry.type)}<small>${moneylessDate.format(new Date(entry.at))}</small></span><span class="${entry.locationStatus === "Fora do raio" ? "absence" : "muted"}">${escapeHtml(entry.locationStatus || "Sem local")}</span></summary><div class="evidence-detail"><div class="evidence-photo"><span>Foto</span></div><div><p>Distancia: ${entry.distanceMeters == null ? "Indisponivel" : `${entry.distanceMeters} m`}</p><p>Precisao GPS: ${entry.accuracy == null ? "Indisponivel" : `${Math.round(entry.accuracy)} m`}</p>${entry.latitude != null && entry.longitude != null ? `<a href="https://www.google.com/maps?q=${Number(entry.latitude)},${Number(entry.longitude)}" target="_blank" rel="noopener noreferrer">Ver localizacao</a>` : ""}</div></div></details>`).join("") : `<div class="empty">Sem evidencias neste periodo.</div>`}
+      </section>
+    </div>
+    <details class="admin-settings"><summary>Configuracoes de jornada e local</summary>
     <form class="settings-grid" onsubmit="saveTimeSettings(event)">
-      <h3>Local permitido</h3>
-      <label>Latitude<input name="storeLatitude" value="${adminSummary.settings?.["timeclock.store_latitude"] || ""}" placeholder="-22.0000000" /></label>
-      <label>Longitude<input name="storeLongitude" value="${adminSummary.settings?.["timeclock.store_longitude"] || ""}" placeholder="-43.0000000" /></label>
-      <label>Raio permitido em metros<input name="allowedRadiusMeters" type="number" min="10" value="${adminSummary.settings?.["timeclock.allowed_radius_meters"] || "150"}" /></label>
+      <label>Entrada prevista<input name="startTime" type="time" required value="${escapeHtml(adminSummary?.settings?.["timeclock.start_time"] || "09:00")}" /></label>
+      <label>Limite de atraso (min)<input name="lateToleranceMinutes" type="number" min="0" max="120" required value="${escapeHtml(adminSummary?.settings?.["timeclock.late_tolerance_minutes"] ?? 10)}" /></label>
+      <label>Latitude<input name="storeLatitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_latitude"] || "")}" placeholder="-22.0000000" /></label>
+      <label>Longitude<input name="storeLongitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_longitude"] || "")}" placeholder="-43.0000000" /></label>
+      <label>Raio permitido em metros<input name="allowedRadiusMeters" type="number" min="10" value="${escapeHtml(adminSummary?.settings?.["timeclock.allowed_radius_meters"] || "150")}" /></label>
       <button type="button" onclick="fillCurrentLocation()">Usar local atual</button>
-      <button type="submit">Salvar local</button>
+      <button type="submit">Salvar configuracoes</button>
     </form>
+    </details>
   </section>`;
 }
 
@@ -412,7 +473,7 @@ async function saveTimeSettings(event) {
   const data = Object.fromEntries(new FormData(event.currentTarget));
   try {
     await api("/timeclock/admin/settings", { method: "POST", body: JSON.stringify(data) });
-    statusText = "Local do ponto salvo.";
+    statusText = "Configuracoes do ponto salvas.";
     await loadAdminSummary();
   } catch (error) {
     statusText = error.message;
@@ -423,5 +484,27 @@ async function saveTimeSettings(event) {
 function render() {
   document.getElementById("app").innerHTML = session ? employeeView() : loginView();
 }
+
+document.addEventListener("toggle", async (event) => {
+  const detail = event.target;
+  if (!detail.matches?.(".evidence-item") || !detail.open || detail.dataset.loaded) return;
+  const photo = detail.querySelector(".evidence-photo");
+  detail.dataset.loaded = "loading";
+  photo.textContent = "Carregando foto...";
+  try {
+    const result = await api(`/timeclock/admin/evidence/${encodeURIComponent(detail.dataset.entryId)}`);
+    photo.textContent = "";
+    if (result.photoData) {
+      const img = document.createElement("img");
+      img.src = result.photoData;
+      img.alt = "Selfie da marcacao";
+      photo.appendChild(img);
+    } else photo.textContent = "Sem foto";
+    detail.dataset.loaded = "yes";
+  } catch (error) {
+    photo.textContent = error.message;
+    delete detail.dataset.loaded;
+  }
+}, true);
 
 boot();

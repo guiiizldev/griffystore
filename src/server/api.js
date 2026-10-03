@@ -123,10 +123,11 @@ function distanceMeters(aLat, aLng, bLat, bLng) {
   return Math.round(earth * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)));
 }
 
-function timeClockSummary(entries) {
+function timeClockSummary(entries, startTime = "09:00", tolerance = 10) {
   const byUserDay = new Map();
   for (const entry of entries) {
-    const day = formatDate(entry.entry_at);
+    const at = new Date(entry.entry_at);
+    const day = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}`;
     const key = `${entry.user_id}:${day}`;
     if (!byUserDay.has(key)) {
       byUserDay.set(key, {
@@ -141,19 +142,32 @@ function timeClockSummary(entries) {
       });
     }
     const item = byUserDay.get(key);
-    item.entries.push(mapTimeEntry(entry));
-    if (entry.entry_type === "Entrada" && !item.firstIn) item.firstIn = entry.entry_at;
-    if (entry.entry_type === "Saida") item.lastOut = entry.entry_at;
-    if (entry.entry_type === "Intervalo inicio" && !item.breakStart) item.breakStart = entry.entry_at;
-    if (entry.entry_type === "Intervalo fim") item.breakEnd = entry.entry_at;
+    item.entries.push(mapTimeEntry({ ...entry, photo_data: undefined }));
+    if (entry.entry_type === "Entrada" && (!item.firstIn || new Date(entry.entry_at) < new Date(item.firstIn))) item.firstIn = entry.entry_at;
+    if (entry.entry_type === "Saida" && (!item.lastOut || new Date(entry.entry_at) > new Date(item.lastOut))) item.lastOut = entry.entry_at;
+    if (entry.entry_type === "Intervalo inicio" && (!item.breakStart || new Date(entry.entry_at) < new Date(item.breakStart))) item.breakStart = entry.entry_at;
+    if (entry.entry_type === "Intervalo fim" && (!item.breakEnd || new Date(entry.entry_at) > new Date(item.breakEnd))) item.breakEnd = entry.entry_at;
   }
   return Array.from(byUserDay.values()).map((item) => {
     const first = item.firstIn ? new Date(item.firstIn) : null;
     const last = item.lastOut ? new Date(item.lastOut) : null;
-    const lateMinutes = first ? Math.max(0, first.getHours() * 60 + first.getMinutes() - 9 * 60) : null;
-    const workedMinutes = first && last ? Math.max(0, Math.round((last - first) / 60000)) : null;
-    return { ...item, lateMinutes, workedMinutes };
-  });
+    const [hour, minute] = startTime.split(":").map(Number);
+    const lateMinutes = first ? Math.max(0, first.getHours() * 60 + first.getMinutes() - hour * 60 - minute) : null;
+    const ordered = [...item.entries].sort((a, b) => new Date(a.at) - new Date(b.at));
+    let breakAt = null;
+    let breakMinutes = 0;
+    for (const entry of ordered) {
+      if (entry.type === "Intervalo inicio" && !breakAt) breakAt = new Date(entry.at);
+      if (entry.type === "Intervalo fim" && breakAt) {
+        if (first && last) breakMinutes += Math.max(0, (Math.min(new Date(entry.at), last) - Math.max(breakAt, first)) / 60000);
+        breakAt = null;
+      }
+    }
+    const incomplete = !first || !last || Boolean(breakAt);
+    const workedMinutes = !incomplete ? Math.max(0, Math.round((last - first) / 60000 - breakMinutes)) : null;
+    const attendanceStatus = lateMinutes === null ? "missing" : lateMinutes === 0 ? "on-time" : lateMinutes <= Number(tolerance) ? "late" : "absence";
+    return { ...item, lateMinutes, workedMinutes, incomplete, attendanceStatus };
+  }).sort((a, b) => b.date.localeCompare(a.date) || a.userName.localeCompare(b.userName));
 }
 
 function mapRepairPart(row) {
@@ -895,9 +909,10 @@ function createApp(options = {}) {
       res.status(401).json({ error: "Sessao expirada." });
       return;
     }
-    const [entries, profiles] = await Promise.all([
+    const [entries, profiles, timeSettings] = await Promise.all([
       query("SELECT * FROM time_clock_entries WHERE user_id = :userId ORDER BY entry_at DESC LIMIT 120", { userId: user.id }),
       query("SELECT user_id, face_photo_data, face_updated_at, updated_at FROM time_clock_profiles WHERE user_id = :userId LIMIT 1", { userId: user.id }),
+      query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings WHERE setting_key LIKE 'timeclock.%'"),
     ]);
     const profile = profiles[0] || {};
     res.json({
@@ -907,7 +922,7 @@ function createApp(options = {}) {
         faceUpdatedAt: profile.face_updated_at || profile.updated_at || null,
       },
       entries: entries.map(mapTimeEntry),
-      summary: timeClockSummary(entries).slice(0, 31),
+      summary: timeClockSummary(entries, mapSettings(timeSettings)["timeclock.start_time"] || "09:00", mapSettings(timeSettings)["timeclock.late_tolerance_minutes"] ?? 10).slice(0, 31),
     });
   });
 
@@ -992,12 +1007,21 @@ function createApp(options = {}) {
       return;
     }
     const month = String(req.query.month || today().slice(0, 7));
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: "Mes invalido." });
     const entries = await query(
-      "SELECT * FROM time_clock_entries WHERE DATE_FORMAT(entry_at, '%Y-%m') = :month ORDER BY entry_at ASC",
+      "SELECT id, user_id, user_name, entry_type, entry_at, source, latitude, longitude, accuracy, distance_meters, location_status, device_info, ip_address, note FROM time_clock_entries WHERE DATE_FORMAT(entry_at, '%Y-%m') = :month ORDER BY entry_at ASC",
       { month },
     );
     const settings = mapSettings(await query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings WHERE setting_key LIKE 'timeclock.%'"));
-    res.json({ month, settings, summary: timeClockSummary(entries), entries: entries.map(mapTimeEntry) });
+    const employees = await query("SELECT id, name, role, active FROM users WHERE role <> 'caixa' ORDER BY name");
+    res.json({ month, settings, employees, summary: timeClockSummary(entries, settings["timeclock.start_time"] || "09:00", settings["timeclock.late_tolerance_minutes"] ?? 10), entries: entries.map(mapTimeEntry) });
+  });
+
+  app.get("/api/timeclock/admin/evidence/:id", async (req, res) => {
+    if (!requireRoleToken(req, ["admin", "gerente"])) return res.status(403).json({ error: "Apenas administrador ou gerente." });
+    const rows = await query("SELECT photo_data FROM time_clock_entries WHERE id = :id LIMIT 1", { id: req.params.id });
+    if (!rows.length) return res.status(404).json({ error: "Marcacao nao encontrada." });
+    res.set("Cache-Control", "no-store").json({ photoData: rows[0].photo_data || "" });
   });
 
   app.post("/api/timeclock/admin/settings", async (req, res) => {
@@ -1006,7 +1030,13 @@ function createApp(options = {}) {
       res.status(403).json({ error: "Apenas administrador ou gerente." });
       return;
     }
+    const startTime = req.body.startTime || "09:00";
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) return res.status(400).json({ error: "Horario de entrada invalido." });
+    const tolerance = Number(req.body.lateToleranceMinutes ?? 10);
+    if (!Number.isInteger(tolerance) || tolerance < 0 || tolerance > 120) return res.status(400).json({ error: "Tolerancia deve ser entre 0 e 120 minutos." });
     const allowed = {
+      "timeclock.start_time": startTime,
+      "timeclock.late_tolerance_minutes": String(tolerance),
       "timeclock.store_latitude": req.body.storeLatitude || "",
       "timeclock.store_longitude": req.body.storeLongitude || "",
       "timeclock.allowed_radius_meters": String(Number(req.body.allowedRadiusMeters || 150)),
@@ -1785,4 +1815,4 @@ async function startServer(port = 3789) {
   };
 }
 
-module.exports = { createApp, startServer };
+module.exports = { createApp, startServer, timeClockSummary };
