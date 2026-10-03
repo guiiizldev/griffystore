@@ -13,6 +13,30 @@ let currentTab = "punch";
 let selectedEmployee = "";
 let selectedMonth = localMonth();
 let adminLoading = false;
+let captureBusy = false;
+let installPrompt = null;
+
+function icon(name) {
+  return `<i data-lucide="${name}" aria-hidden="true"></i>`;
+}
+
+function switchTab(tab) {
+  if (captureBusy) return;
+  statusText = "";
+  evidenceText = "";
+  if (tab === "admin") {
+    window.scrollTo(0, 0);
+    return loadAdminSummary();
+  }
+  currentTab = tab;
+  render();
+  window.scrollTo(0, 0);
+}
+
+function updateClock() {
+  const element = document.getElementById("live-clock");
+  if (element) element.textContent = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
 
 function localMonth() {
   const now = new Date();
@@ -40,18 +64,36 @@ function roleName(role) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(`${apiBase}${path}`, {
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    ...options,
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || "Falha na comunicacao.");
-  return body;
+  if (!navigator.onLine) throw new Error("Sem conexao. Conecte-se para registrar ou consultar o ponto.");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(`${apiBase}${path}`, {
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      ...options,
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(body.error || "Falha na comunicacao.");
+      error.status = response.status;
+      throw error;
+    }
+    return body;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("A conexao demorou demais. Tente novamente.");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function boot() {
-  users = await api("/timeclock/users").catch(() => []);
-  if (token) await loadMe().catch(logout);
+  users = await api("/timeclock/users").catch((error) => { statusText = error.message; return []; });
+  if (token) await loadMe().catch((error) => {
+    if (error.status === 401) logout();
+    statusText = error.message;
+  });
   render();
 }
 
@@ -78,6 +120,8 @@ function logout() {
   adminSummary = null;
   currentTab = "punch";
   selectedEmployee = "";
+  statusText = "";
+  evidenceText = "";
   localStorage.removeItem(tokenKey);
   localStorage.removeItem("griffy-timeclock-user");
 }
@@ -87,6 +131,14 @@ async function loadMe() {
 }
 
 async function punch(type) {
+  if (captureBusy) return;
+  if (!navigator.onLine) {
+    statusText = "Sem conexao. O ponto precisa ser confirmado pela loja.";
+    render();
+    return;
+  }
+  captureBusy = true;
+  evidenceText = "";
   statusText = "Coletando selfie e localizacao...";
   render();
   try {
@@ -98,10 +150,19 @@ async function punch(type) {
   } catch (error) {
     statusText = error.message;
   }
+  captureBusy = false;
   render();
 }
 
 async function updateFaceProfile() {
+  if (captureBusy) return;
+  if (!navigator.onLine) {
+    statusText = "Conecte-se para atualizar sua foto.";
+    render();
+    return;
+  }
+  captureBusy = true;
+  evidenceText = "";
   statusText = "Abrindo camera para atualizar facial...";
   render();
   try {
@@ -120,6 +181,7 @@ async function updateFaceProfile() {
   } catch (error) {
     statusText = error.message;
   }
+  captureBusy = false;
   render();
 }
 
@@ -148,9 +210,9 @@ function guidedSelfieCapture(stream) {
     const overlay = document.createElement("div");
     overlay.className = "selfie-overlay";
     overlay.innerHTML = `
-      <section class="selfie-dialog">
+      <section class="selfie-dialog" role="dialog" aria-modal="true" aria-labelledby="selfie-title">
         <div class="selfie-head">
-          <h2>Centralize o rosto</h2>
+          <h2 id="selfie-title">Centralize o rosto</h2>
           <p>Use boa luz, olhe para a camera e mantenha o rosto dentro da moldura.</p>
         </div>
         <div class="selfie-frame">
@@ -163,13 +225,18 @@ function guidedSelfieCapture(stream) {
         </div>
       </section>`;
     document.body.appendChild(overlay);
+    document.body.classList.add("capturing");
 
     const video = overlay.querySelector("video");
+    const captureButton = overlay.querySelector('[data-action="capture"]');
+    captureButton.disabled = true;
+    video.addEventListener("loadeddata", () => { captureButton.disabled = false; }, { once: true });
     video.srcObject = stream;
 
     const cleanup = () => {
       stream.getTracks().forEach((track) => track.stop());
       overlay.remove();
+      document.body.classList.remove("capturing");
     };
 
     overlay.querySelector('[data-action="cancel"]').addEventListener("click", () => {
@@ -217,7 +284,11 @@ function guidedSelfieCapture(stream) {
 }
 
 async function collectEvidence() {
-  const [position, photoData] = await Promise.all([getPosition(), captureSelfie()]);
+  const positionResult = getPosition().then((position) => ({ position }), (error) => ({ error }));
+  const photoData = await captureSelfie();
+  const result = await positionResult;
+  if (result.error) throw result.error;
+  const position = result.position;
   return {
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
@@ -249,23 +320,27 @@ async function loadAdminSummary() {
 
 function loginView() {
   return `<section class="login">
+    <div class="connection-notice" ${navigator.onLine ? "hidden" : ""} role="status">${icon("wifi-off")} Sem conexao com a loja</div>
     <div class="brand">
       <img src="logo.png" alt="Griffy Store" />
-      <h1>Ponto Griffy Store</h1>
-      <p>Registro de entrada, intervalo e saida dos funcionarios.</p>
+      <span class="eyebrow">PORTAL DO COLABORADOR</span>
+      <h1>Seu dia comeca aqui.</h1>
+      <p>Acesse sua jornada na Griffy Store.</p>
     </div>
     <form class="panel" onsubmit="login(event)">
       <label>Funcionario
         <select name="userId" required>
-          ${users.map((user) => `<option value="${user.id}">${user.name} - ${roleName(user.role)}</option>`).join("")}
+          <option value="">Selecione seu nome</option>
+          ${users.map((user) => `<option value="${escapeHtml(user.id)}">${escapeHtml(user.name)} - ${roleName(user.role)}</option>`).join("")}
         </select>
       </label>
       <label>PIN
         <input name="pin" type="password" inputmode="numeric" autocomplete="current-password" required />
       </label>
-      <button class="primary" type="submit">Entrar</button>
+      <button class="primary" type="submit">Entrar ${icon("arrow-right")}</button>
       ${statusText ? `<span class="status">${statusText}</span>` : ""}
     </form>
+    <div class="login-footer">${icon("shield-check")} Ponto Griffy Store</div>
   </section>`;
 }
 
@@ -274,61 +349,66 @@ function employeeView() {
   const summary = me?.summary || [];
   const canAdmin = ["admin", "gerente"].includes(session?.role);
   return `<section class="shell">
-    <aside>
+    <div class="app-topbar">
       <div class="aside-brand">
         <img src="logo.png" alt="Griffy Store" />
       </div>
       <div class="user-card">
-        <strong>${session.name}</strong>
-        <span>${roleName(session.role)}</span>
+        <strong>Ponto</strong>
+        <span>Griffy Store</span>
       </div>
-      <button class="ghost" type="button" onclick="logout(); render()">Sair</button>
-    </aside>
-    <main>
-      <header>
+      <button class="avatar account-shortcut" type="button" title="Minha conta" aria-label="Minha conta" onclick="switchTab('account')">${escapeHtml(session.name.slice(0, 1).toUpperCase())}</button>
+    </div>
+    <div class="connection-notice" ${navigator.onLine ? "hidden" : ""} role="status">${icon("wifi-off")} Sem conexao com a loja</div>
+    <main class="app-content">
+      <header class="page-header">
         <div>
-          <h1>${currentTab === "admin" ? "Gestao de ponto" : "Meu ponto"}</h1>
+          <span class="eyebrow">${currentTab === "punch" ? `OLA, ${escapeHtml(session.name.split(" ")[0].toUpperCase())}` : "GRIFFY STORE"}</span>
+          <h1>${{ punch: "Minha jornada", history: "Meu historico", account: "Minha conta", admin: "Minha equipe" }[currentTab]}</h1>
           <p>${new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</p>
         </div>
       </header>
-      <nav class="tabs" aria-label="Areas do ponto">
-        ${tabButton("punch", "Registrar")}
-        ${tabButton("account", "Minha conta")}
-        ${tabButton("history", "Historico")}
-        ${canAdmin ? `<button class="${currentTab === "admin" ? "active" : ""}" type="button" onclick="loadAdminSummary()">Equipe</button>` : ""}
-      </nav>
-      ${statusText ? `<div class="notice">${statusText}</div>` : ""}
-      ${evidenceText ? `<div class="notice ok">${evidenceText}</div>` : ""}
+      ${statusText ? `<div class="notice ${evidenceText ? "ok" : ""}" role="status">${icon(evidenceText ? "circle-check" : "info")}<span>${escapeHtml(statusText)}</span></div>` : ""}
       ${currentTab === "admin" && canAdmin ? adminView() : currentTab === "account" ? accountView() : currentTab === "history" ? historyView(entries, summary) : punchView(entries, summary)}
     </main>
+    <nav class="tabs bottom-nav" aria-label="Areas do ponto">
+      ${tabButton("punch", "Ponto", "clock-3")}
+      ${tabButton("history", "Historico", "calendar-days")}
+      ${canAdmin ? tabButton("admin", "Equipe", "users-round") : ""}
+      ${tabButton("account", "Conta", "user-round")}
+    </nav>
   </section>`;
 }
 
-function tabButton(id, label) {
-  return `<button class="${currentTab === id ? "active" : ""}" type="button" onclick="currentTab='${id}'; render()">${label}</button>`;
+function tabButton(id, label, symbol) {
+  return `<button class="${currentTab === id ? "active" : ""}" type="button" ${currentTab === id ? 'aria-current="page"' : ""} onclick="switchTab('${id}')" ${captureBusy ? "disabled" : ""}>${icon(symbol)}<span>${label}</span></button>`;
 }
 
 function punchView(entries, summary) {
+  const today = new Date().toLocaleDateString("en-CA");
+  const todayEntries = entries.filter((entry) => new Date(entry.at).toLocaleDateString("en-CA") === today);
+  const latest = todayEntries[0];
+  const status = latest?.type === "Saida" ? "Jornada encerrada" : latest?.type === "Intervalo inicio" ? "Em intervalo" : latest ? "Jornada em andamento" : "Aguardando entrada";
   return `<section class="tab-page">
+    <div class="journey-clock"><div><span class="eyebrow">AGORA</span><strong id="live-clock">${clock(new Date())}</strong></div><span class="journey-state ${latest ? "started" : ""}"><i></i>${status}</span></div>
+    <div class="section-heading"><h2>Registrar ponto</h2><span>${todayEntries.length} hoje</span></div>
     <div class="actions">
       ${[
-        { type: "Entrada", label: "Entrada" },
-        { type: "Intervalo inicio", label: "Inicio intervalo" },
-        { type: "Intervalo fim", label: "Fim intervalo" },
-        { type: "Saida", label: "Saida" },
-      ].map((item) => `<button class="punch-action" type="button" onclick="punch('${item.type}')"><span>${item.label}</span></button>`).join("")}
+        { type: "Entrada", label: "Entrada", icon: "log-in", note: "Iniciar jornada" },
+        { type: "Intervalo inicio", label: "Intervalo", icon: "coffee", note: "Iniciar pausa" },
+        { type: "Intervalo fim", label: "Retorno", icon: "rotate-ccw", note: "Voltar da pausa" },
+        { type: "Saida", label: "Saida", icon: "log-out", note: "Encerrar jornada" },
+      ].map((item) => `<button class="punch-action" type="button" onclick="punch('${item.type}')" ${captureBusy ? "disabled" : ""}>${icon(item.icon)}<span>${item.label}</span><small>${item.note}</small></button>`).join("")}
     </div>
-    <div class="notice">
-      Ao bater ponto, o sistema registra selfie, GPS, aparelho e IP para validacao administrativa.
-    </div>
+    <div class="verification-line">${icon("scan-face")} Selfie <span></span>${icon("map-pin")} Localizacao</div>
     <div class="grid">
       <section class="panel">
-        <h2>Ultimas batidas</h2>
-        ${entries.length ? entries.slice(0, 6).map(entryRow).join("") : `<div class="empty">Nenhuma batida registrada.</div>`}
+        <div class="section-heading"><h2>Ultimos registros</h2><button class="text-button" onclick="switchTab('history')" type="button">Ver todos ${icon("chevron-right")}</button></div>
+        ${entries.length ? entries.slice(0, 3).map(entryRow).join("") : `<div class="empty">${icon("clock-3")}<span>Nenhuma batida registrada.</span></div>`}
       </section>
       <section class="panel">
         <h2>Pontualidade</h2>
-        ${summary.length ? summary.slice(0, 6).map(summaryRow).join("") : `<div class="empty">Sem resumo ainda.</div>`}
+        ${summary.length ? summary.slice(0, 3).map(summaryRow).join("") : `<div class="empty">Sem resumo ainda.</div>`}
       </section>
     </div>
   </section>`;
@@ -339,11 +419,10 @@ function accountView() {
   return `<section class="account-grid">
     <article class="panel account-card">
       <div>
-        <h2>Minha conta</h2>
-        <p>Dados do funcionario conectado ao ponto.</p>
+        <div class="account-identity"><span class="avatar">${escapeHtml(session.name.slice(0, 1).toUpperCase())}</span><div><h2>${escapeHtml(session.name)}</h2><p>${roleName(session.role)}</p></div></div>
       </div>
       <div class="profile-lines">
-        <div><span>Nome</span><strong>${session.name}</strong></div>
+        <div><span>Nome</span><strong>${escapeHtml(session.name)}</strong></div>
         <div><span>Cargo</span><strong>${roleName(session.role)}</strong></div>
         <div><span>Facial</span><strong>${profile.faceUpdatedAt ? `Atualizado em ${moneylessDate.format(new Date(profile.faceUpdatedAt))}` : "Nao cadastrado"}</strong></div>
       </div>
@@ -351,11 +430,11 @@ function accountView() {
     <article class="panel face-card">
       <h2>Facial de referencia</h2>
       <div class="face-preview">
-        ${profile.facePhotoData ? `<img src="${profile.facePhotoData}" alt="Facial de referencia" />` : `<span>Sem facial cadastrado</span>`}
+        ${profile.facePhotoData ? `<img src="${escapeHtml(profile.facePhotoData)}" alt="Facial de referencia" />` : `<span>${icon("scan-face")} Sem facial cadastrado</span>`}
       </div>
-      <button class="primary" type="button" onclick="updateFaceProfile()">Atualizar facial</button>
-      <p>Use uma foto frontal, com boa luz e o rosto centralizado.</p>
+      <button class="primary" type="button" onclick="updateFaceProfile()" ${captureBusy ? "disabled" : ""}>${icon("camera")} Atualizar facial</button>
     </article>
+    <div class="account-actions">${installPrompt ? `<button class="secondary" type="button" onclick="installApp()">${icon("download")} Instalar aplicativo</button>` : ""}<button class="logout-button" type="button" onclick="logout(); render()">${icon("log-out")} Sair da conta</button></div>
   </section>`;
 }
 
@@ -396,12 +475,13 @@ function exportAttendance() {
 
 function entryRow(entry) {
   return `<div class="entry-card">
-    ${entry.photoData ? `<img src="${entry.photoData}" alt="Selfie do ponto" />` : ""}
+    <span class="entry-symbol ${entry.type === "Saida" ? "exit" : ""}">${icon({ Entrada: "log-in", Saida: "log-out", "Intervalo inicio": "coffee", "Intervalo fim": "rotate-ccw" }[entry.type] || "clock-3")}</span>
     <div>
-      <strong>${entry.type}</strong>
-      <span>${moneylessDate.format(new Date(entry.at))}</span>
-      <small>${entry.locationStatus || "Sem local"}${entry.distanceMeters !== null && entry.distanceMeters !== undefined ? ` - ${entry.distanceMeters}m` : ""}</small>
+      <strong>${escapeHtml(entry.type)}</strong>
+      <span>${new Date(entry.at).toLocaleDateString("pt-BR")}</span>
+      <small>${escapeHtml(entry.locationStatus || "Sem local")}</small>
     </div>
+    <strong class="entry-time">${clock(entry.at)}</strong>
   </div>`;
 }
 
@@ -421,7 +501,7 @@ function adminView() {
       </div>
       <div class="admin-tools">
         <label>Periodo<input id="month" type="month" value="${selectedMonth}" onchange="loadAdminSummary()" ${adminLoading ? "disabled" : ""} /></label>
-        <button class="secondary" type="button" onclick="exportAttendance()" ${rows.length ? "" : "disabled"}>Exportar CSV</button>
+        <button class="icon-button secondary" type="button" title="Exportar CSV" aria-label="Exportar CSV" onclick="exportAttendance()" ${rows.length ? "" : "disabled"}>${icon("download")}</button>
       </div>
     </div>
     <label class="employee-filter">Funcionario
@@ -483,7 +563,29 @@ async function saveTimeSettings(event) {
 
 function render() {
   document.getElementById("app").innerHTML = session ? employeeView() : loginView();
+  window.lucide?.createIcons();
 }
+
+async function installApp() {
+  if (!installPrompt) return;
+  await installPrompt.prompt();
+  await installPrompt.userChoice;
+  installPrompt = null;
+  render();
+}
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  installPrompt = event;
+  if (currentTab === "account") render();
+});
+window.addEventListener("appinstalled", () => { installPrompt = null; if (currentTab === "account") render(); });
+for (const event of ["online", "offline"]) window.addEventListener(event, () => {
+  const banner = document.querySelector(".connection-notice");
+  if (banner) banner.hidden = navigator.onLine;
+});
+setInterval(updateClock, 1000);
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
 
 document.addEventListener("toggle", async (event) => {
   const detail = event.target;

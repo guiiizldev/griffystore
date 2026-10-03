@@ -1,0 +1,14 @@
+{
+  "id": "./",
+  "name": "Ponto Griffy Store",
+  "short_name": "Ponto Griffy",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101112",
+  "theme_color": "#101112",
+  "icons": [
+    { "src": "app-icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
+}
