@@ -8,6 +8,7 @@ const { migrate } = require("./schema");
 const { issueFiscalDocument } = require("./fiscal");
 const packageInfo = require("../../package.json");
 const { coordinate, maxRadius, validateLocation } = require("./timeclock-location");
+const { beginAttempt, failAttempt, loadAttempts, registerAttempts } = require("./timeclock-attempts");
 const { scheduleToday, clockParts, entryAtSql, entryBusinessDateSql, regularSchedule, effectiveSchedule, completeAttendance, loadScheduleData, loadSwaps, registerScheduling } = require("./timeclock-scheduling");
 
 function toNumber(value) {
@@ -914,12 +915,13 @@ function createApp(options = {}) {
     }
     const scheduleDate = scheduleToday();
     const fromDate = new Date(Date.parse(`${scheduleDate}T12:00:00Z`) - 30 * 86400000).toISOString().slice(0, 10);
-    const [entries, profiles, timeSettings, scheduleData, swaps] = await Promise.all([
+    const [entries, profiles, timeSettings, scheduleData, swaps, attempts] = await Promise.all([
       query(`SELECT id, user_id, user_name, entry_type, ${entryAtSql} AS entry_at, source, latitude, longitude, accuracy, distance_meters, location_status, device_info, ip_address, note FROM time_clock_entries WHERE user_id = :userId AND ${entryBusinessDateSql} >= :fromDate ORDER BY entry_at DESC`, { userId: user.id, fromDate }),
       query("SELECT user_id, face_photo_data, face_updated_at, updated_at FROM time_clock_profiles WHERE user_id = :userId LIMIT 1", { userId: user.id }),
       query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings WHERE setting_key LIKE 'timeclock.%'"),
       loadScheduleData(query, user.id),
       loadSwaps(query, user.id),
+      loadAttempts(query, { userId: user.id, fromDate }),
     ]);
     const profile = profiles[0] || {};
     const tolerance = mapSettings(timeSettings)["timeclock.late_tolerance_minutes"] ?? 10;
@@ -929,6 +931,7 @@ function createApp(options = {}) {
       schedule: effectiveSchedule(scheduleData, user.id, scheduleDate),
       regularSchedule: regularSchedule(scheduleData, user.id, scheduleDate),
       swaps,
+      attempts,
       profile: {
         facePhotoData: profile.face_photo_data || "",
         faceUpdatedAt: profile.face_updated_at || profile.updated_at || null,
@@ -970,17 +973,25 @@ function createApp(options = {}) {
       res.status(400).json({ error: "Tipo de ponto invalido." });
       return;
     }
-    if (!req.body.photoData || !String(req.body.photoData).startsWith("data:image/")) {
-      res.status(400).json({ error: "Selfie obrigatoria para registrar o ponto." });
-      return;
-    }
+    let attempt;
+    if (req.body.attemptId) {
+      const rows = await query("SELECT * FROM time_clock_attempts WHERE id=:id AND user_id=:userId AND entry_type=:type", { id: req.body.attemptId, userId: user.id, type });
+      attempt = rows[0];
+      if (!attempt) return res.status(404).json({ error: "Tentativa nao encontrada." });
+      if (attempt.status === "accepted") return res.json({ ok: true, entryId: attempt.entry_id, alreadyRecorded: true });
+      if (attempt.status !== "processing") return res.status(409).json({ error: "Esta tentativa terminou. Toque novamente para registrar." });
+    } else { attempt = await beginAttempt(query, uid, user, type); }
+    const rejectPunch = async (error) => {
+      await failAttempt(query, attempt.id, user.id, error, req.body);
+      return res.status(400).json({ error, attemptRecorded: true });
+    };
+    if (!req.body.photoData || !String(req.body.photoData).startsWith("data:image/")) return rejectPunch("Selfie obrigatoria para registrar o ponto.");
     if (req.body.latitude === undefined || req.body.longitude === undefined) {
-      res.status(400).json({ error: "Localizacao obrigatoria para registrar o ponto." });
-      return;
+      return rejectPunch("Localizacao obrigatoria para registrar o ponto.");
     }
     const settings = mapSettings(await query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings WHERE setting_key LIKE 'timeclock.%'"));
     const location = validateLocation(settings, req.body);
-    if (location.error) return res.status(400).json({ error: location.error });
+    if (location.error) return rejectPunch(location.error);
     const entry = {
       id: uid("tc"),
       userId: user.id,
@@ -997,11 +1008,20 @@ function createApp(options = {}) {
     try {
       await connection.beginTransaction();
       await connection.execute("SELECT id FROM users WHERE id = :userId FOR UPDATE", { userId: user.id });
+      const [attemptRows] = await connection.execute("SELECT status,entry_id FROM time_clock_attempts WHERE id=:id AND user_id=:userId FOR UPDATE", { id: attempt.id, userId: user.id });
+      if (attemptRows[0]?.status === "accepted") {
+        await connection.commit();
+        return res.json({ ok: true, entryId: attemptRows[0].entry_id, alreadyRecorded: true });
+      }
+      if (attemptRows[0]?.status !== "processing") {
+        await connection.rollback();
+        return res.status(409).json({ error: "Esta tentativa terminou. Toque novamente para registrar." });
+      }
       const execute = async (sql, params) => (await connection.execute(sql, params))[0];
       const scheduleData = await loadScheduleData(execute, user.id);
       if (!effectiveSchedule(scheduleData, user.id, scheduleToday())) {
         await connection.rollback();
-        return res.status(400).json({ error: "O administrador precisa configurar seu horario antes do registro de ponto." });
+        return rejectPunch("O administrador precisa configurar seu horario antes do registro de ponto.");
       }
       await connection.execute(
         `INSERT INTO time_clock_entries
@@ -1009,6 +1029,7 @@ function createApp(options = {}) {
        VALUES (:id, :userId, :userName, :type, :source, :latitude, :longitude, :accuracy, :distanceMeters, :locationStatus, :photoData, :deviceInfo, :ipAddress, :note)`,
         entry,
       );
+      await connection.execute("UPDATE time_clock_attempts SET status='accepted',entry_id=:entryId,reason=NULL,latitude=:latitude,longitude=:longitude,accuracy=:accuracy WHERE id=:id", { id: attempt.id, entryId: entry.id, latitude: entry.latitude, longitude: entry.longitude, accuracy: entry.accuracy });
       await connection.commit();
     } catch (error) {
       await connection.rollback();
@@ -1033,9 +1054,10 @@ function createApp(options = {}) {
     const employees = await query("SELECT id, name, role, active FROM users WHERE role <> 'caixa' ORDER BY name");
     const scheduleData = await loadScheduleData(query);
     const swaps = await loadSwaps(query);
+    const attempts = admin.role === "admin" ? await loadAttempts(query, { month }) : [];
     const tolerance = settings["timeclock.late_tolerance_minutes"] ?? 10;
     const monthEnd = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0, 12)).toISOString().slice(0, 10);
-    res.json({ month, settings, scheduleDate: scheduleToday(), swaps,
+    res.json({ month, settings, scheduleDate: scheduleToday(), swaps, attempts,
       employees: employees.map((employee) => ({ ...employee, schedule: regularSchedule(scheduleData, employee.id, scheduleToday()),
         scheduledChanges: scheduleData.schedules.filter((row) => row.user_id === employee.id && row.effectiveFrom > scheduleToday()).map((row) => ({ effectiveFrom: row.effectiveFrom, startTime: row.start_time.slice(0, 5), endTime: row.end_time.slice(0, 5) })) })),
       summary: completeAttendance(timeClockSummary(entries, "09:00", tolerance, (userId, date) => effectiveSchedule(scheduleData, userId, date)), scheduleData, employees, `${month}-01`, monthEnd, tolerance), entries: entries.map(mapTimeEntry) });
@@ -1049,6 +1071,7 @@ function createApp(options = {}) {
   });
 
   registerScheduling(app, { query, db, requireRoleToken, uid });
+  registerAttempts(app, { query, uid, requireRoleToken });
 
   app.post("/api/timeclock/admin/settings", async (req, res) => {
     const admin = requireRoleToken(req, ["admin", "gerente"]);

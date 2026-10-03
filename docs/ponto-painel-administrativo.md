@@ -45,6 +45,22 @@ e bloqueada. Ative a localizacao precisa no celular. O GPS e aproximado:
 nao delimita exatamente a calcada nem comprova sozinho a presenca fisica.
 Contas excluidas ou inativas perdem acesso ao ponto mesmo com sessao anterior.
 
+## Tentativas e erros
+
+O atraso nao bloqueia uma batida: pontos validos sao gravados mesmo depois
+do horario, com a classificacao de pontualidade correspondente.
+Ao tocar numa batida conectado, o servidor grava uma tentativa antes de abrir
+a camera. Historico e Equipe mostram o horario da tentativa e seu resultado.
+Falhas de camera, GPS, local da loja ou horario nao configurado ficam visiveis.
+Tentativas sao separadas dos pontos: nao contam presenca nem comprovam chegada.
+Sem conexao, nao e possivel registrar a tentativa no servidor.
+
+Somente administrador ve Equipe > Logs de erro. A API dessa aba tambem
+bloqueia gerente e funcionarios. O filtro mensal mostra ate 200 ocorrencias
+recentes; tentativas paradas por mais de dois minutos aparecem nao concluidas.
+Uma falha de rede depois da confirmacao nao converte o ponto em erro, e o
+reenvio da mesma tentativa nao cria ponto duplicado. Fotos nao ficam nos logs.
+
 ## Atualizacao na VPS
 
 ```bash

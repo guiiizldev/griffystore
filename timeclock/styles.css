@@ -189,6 +189,14 @@ summary::-webkit-details-marker { display: none; }
 .work-days label { display: flex; align-items: center; gap: 6px; min-height: 44px; font-size: 12px; }
 .work-days input { width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--brand); }
 .swap-selection-feedback { margin: 0; font-size: 12px; }
+.admin-view-tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 20px; }
+.admin-view-tabs button { flex: 1; font-size: 13px; }
+.attempt-row { border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.attempt-row small { display: block; font-size: 11px; margin-top: 6px; color: var(--muted); }
+.attempt-row .row { gap: 12px; font-size: 12px; }
+.attempt-row strong { text-align: right; }
+.attempt-row p { font-size: 12px; overflow-wrap: anywhere; margin-bottom: 0; }
+.error-log { padding-block: 16px; }
 .swap-selection-preview { border-left: 2px solid var(--brand); padding-left: 12px; }
 .attendance-badge.awaiting, .attendance-badge.off { color: var(--muted); }
 

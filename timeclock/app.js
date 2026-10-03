@@ -20,6 +20,10 @@ let swapOptions = null;
 let swapLoading = false;
 let swapBusy = false;
 let swapOptionsRequest = 0;
+let adminSection = "employees";
+let errorLogs = [];
+let errorLogsLoading = false;
+let errorLogsRequest = 0;
 
 function icon(name) {
   return `<i data-lucide="${name}" aria-hidden="true"></i>`;
@@ -128,6 +132,9 @@ function logout() {
   session = null;
   me = null;
   adminSummary = null;
+  adminSection = "employees";
+  errorLogs = [];
+  errorLogsRequest++;
   currentTab = "punch";
   selectedEmployee = "";
   statusText = "";
@@ -149,23 +156,36 @@ async function punch(type) {
     render();
     return;
   }
-  if (!me?.schedule) {
-    statusText = "Solicite ao administrador a configuracao do seu horario.";
-    render();
-    return;
-  }
   captureBusy = true;
+  let attempt = null;
+  let confirmed = false;
   evidenceText = "";
   statusText = "Coletando selfie e localizacao...";
   render();
   try {
+    attempt = await api("/timeclock/attempts", { method: "POST", body: JSON.stringify({ type }) });
+    if (!me?.schedule) throw new Error("Solicite ao administrador a configuracao do seu horario.");
     const evidence = await collectEvidence();
-    await api("/timeclock/punch", { method: "POST", body: JSON.stringify({ type, source: "web", ...evidence }) });
+    await api("/timeclock/punch", { method: "POST", body: JSON.stringify({ type, attemptId: attempt.id, source: "web", ...evidence }) });
+    confirmed = true;
     statusText = `${type} registrado.`;
     evidenceText = "Selfie e localizacao salvas.";
     await loadMe();
   } catch (error) {
-    statusText = error.message;
+    if (confirmed) statusText = `${type} registrado. Nao foi possivel atualizar o historico agora.`;
+    else {
+      statusText = error.message || "Falha ao registrar o ponto.";
+      if (attempt) {
+        try {
+          const saved = await api(`/timeclock/attempts/${encodeURIComponent(attempt.id)}/fail`, { method: "POST", body: JSON.stringify({ reason: statusText }) });
+          if (saved.status === "accepted") {
+            statusText = `${type} registrado e confirmado pela loja.`;
+            evidenceText = "ok";
+          } else statusText += ` Tentativa registrada as ${clock(saved.at)}.`;
+          await loadMe().catch(() => {});
+        } catch { statusText += ` A tentativa foi iniciada as ${clock(attempt.at)}, mas nao foi possivel confirmar o resultado. Confira o historico antes de tentar novamente.`; }
+      } else statusText += " Nao foi possivel salvar a tentativa no servidor.";
+    }
   }
   captureBusy = false;
   render();
@@ -609,6 +629,10 @@ function historyView(entries, summary) {
       ${entries.length ? entries.map(entryRow).join("") : `<div class="empty">Nenhuma batida registrada.</div>`}
     </section>
     <section class="panel">
+      <h2>Tentativas de registro</h2>
+      ${attemptList(me?.attempts || [])}
+    </section>
+    <section class="panel">
       <h2>Resumo dos dias</h2>
       ${summary.length ? summary.map(summaryRow).join("") : `<div class="empty">Sem resumo ainda.</div>`}
     </section>
@@ -617,6 +641,34 @@ function historyView(entries, summary) {
 
 function summaryRow(day) {
   return `<div class="row"><span>${dayLabel(day.date)}</span>${attendanceBadge(day)}</div>`;
+}
+
+function attemptList(attempts) {
+  return attempts.length ? attempts.map((attempt) => {
+    const label = attempt.status === "accepted" ? "Confirmada" : attempt.status === "failed" ? "Nao confirmada" : new Date() - new Date(attempt.at) > 120000 ? "Nao concluida" : "Em andamento";
+    return `<div class="attempt-row"><div class="row"><span>${escapeHtml(attempt.type)}<small>${moneylessDate.format(new Date(attempt.at))}</small></span><strong class="${attempt.status === "failed" ? "absence" : "muted"}">${label}</strong></div>${attempt.reason ? `<p>${escapeHtml(attempt.reason)}</p>` : ""}</div>`;
+  }).join("") : `<div class="empty">Nenhuma tentativa neste periodo.</div>`;
+}
+
+async function openErrorLogs() {
+  if (session?.role !== "admin") return;
+  const request = ++errorLogsRequest;
+  adminSection = "errors";
+  errorLogsLoading = true;
+  errorLogs = [];
+  render();
+  try {
+    const result = await api(`/timeclock/admin/errors?month=${encodeURIComponent(selectedMonth)}`);
+    if (request === errorLogsRequest) errorLogs = result.logs;
+  } catch (error) { if (request === errorLogsRequest) statusText = error.message; }
+  finally { if (request === errorLogsRequest) { errorLogsLoading = false; if (currentTab === "admin" && adminSection === "errors") render(); } }
+}
+
+function errorLogsView() {
+  return `<section class="tab-page"><div class="admin-view-tabs"><button class="secondary" onclick="adminSection='employees';errorLogsRequest++;render()" type="button">Funcionarios</button><button class="active" type="button" aria-pressed="true">Logs de erro</button></div>
+    <div class="admin-tools"><label>Periodo<input type="month" value="${selectedMonth}" onchange="selectedMonth=this.value;openErrorLogs()" /></label><button class="icon-button secondary" type="button" title="Atualizar logs" aria-label="Atualizar logs" onclick="openErrorLogs()" ${errorLogsLoading ? "disabled" : ""}>${icon("refresh-cw")}</button></div>
+    <h2>Logs de erro do ponto</h2><p class="muted">${errorLogs.length} ocorrencias recentes no periodo</p>
+    ${errorLogsLoading ? `<div class="empty">Carregando logs...</div>` : errorLogs.length ? errorLogs.map((log) => `<article class="error-log"><strong>${escapeHtml(log.userName)}</strong>${attemptList([log])}</article>`).join("") : `<div class="empty">Nenhum erro neste periodo.</div>`}</section>`;
 }
 
 function attendanceBadge(day) {
@@ -650,6 +702,7 @@ function entryRow(entry) {
 }
 
 function adminView() {
+  if (session?.role === "admin" && adminSection === "errors") return errorLogsView();
   const allRows = adminSummary?.summary || [];
   const employees = adminSummary?.employees || users;
   const employee = employees.find((item) => item.id === selectedEmployee);
@@ -658,6 +711,8 @@ function adminView() {
   const totalLate = rows.reduce((sum, row) => sum + (row.lateMinutes || 0), 0);
   const worked = rows.reduce((sum, row) => sum + (row.workedMinutes || 0), 0);
   return `<section class="admin tab-page" aria-busy="${adminLoading}">
+    ${session?.role === "admin" ? `<div class="admin-view-tabs"><button class="active" type="button" aria-pressed="true">Funcionarios</button><button class="secondary" type="button" onclick="openErrorLogs()">Logs de erro</button></div>` : ""}
+    ${adminSummary && (!adminSummary.settings?.["timeclock.store_latitude"] || !adminSummary.settings?.["timeclock.store_longitude"]) ? `<div class="notice"><span>Batidas bloqueadas: localizacao da loja nao configurada.</span><button class="icon-button secondary" type="button" title="Configurar local da loja" aria-label="Configurar local da loja" onclick="const local=document.querySelector('.local-settings');local.open=true;local.scrollIntoView({behavior:'smooth'})">${icon("map-pin")}</button></div>` : ""}
     <div class="admin-head">
       <div>
         <h2>Acompanhamento da equipe</h2>
@@ -698,7 +753,8 @@ function adminView() {
       </section>
     </div>
     <section class="attendance-section"><h2>Trocas deste funcionario</h2>${(adminSummary?.swaps || []).filter((swap) => swap.requesterId === selectedEmployee || swap.targetId === selectedEmployee).map((swap) => swapCard(swap, false)).join("") || `<div class="empty">Nenhum pedido de troca.</div>`}</section>
-    <details class="admin-settings"><summary>Configuracoes de jornada e local</summary>
+    <section class="attendance-section"><h2>Tentativas deste funcionario</h2>${attemptList((adminSummary?.attempts || []).filter((attempt) => attempt.userId === selectedEmployee))}</section>
+    <details class="admin-settings local-settings"><summary>Configuracoes de jornada e local</summary>
     <form class="settings-grid" onsubmit="saveTimeSettings(event)">
       <label>Limite de atraso (min)<input name="lateToleranceMinutes" type="number" min="0" max="120" required value="${escapeHtml(adminSummary?.settings?.["timeclock.late_tolerance_minutes"] ?? 10)}" /></label>
       <label>Latitude<input name="storeLatitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_latitude"] || "")}" placeholder="-22.0000000" /></label>

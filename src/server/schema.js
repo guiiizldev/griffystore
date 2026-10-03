@@ -269,6 +269,22 @@ const statements = [
     note VARCHAR(255) NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS time_clock_attempts (
+    id VARCHAR(40) PRIMARY KEY,
+    user_id VARCHAR(40) NOT NULL,
+    user_name VARCHAR(120) NOT NULL,
+    entry_type VARCHAR(30) NOT NULL,
+    entry_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status ENUM('processing','failed','accepted') NOT NULL DEFAULT 'processing',
+    reason VARCHAR(255) NULL,
+    entry_id VARCHAR(40) NULL,
+    latitude DECIMAL(10,7) NULL,
+    longitude DECIMAL(10,7) NULL,
+    accuracy DECIMAL(10,2) NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_attempt_user_date (user_id, entry_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
   `CREATE TABLE IF NOT EXISTS time_clock_adjustments (
     id VARCHAR(40) PRIMARY KEY,
     user_id VARCHAR(40) NOT NULL,

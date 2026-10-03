@@ -19,7 +19,7 @@
     "fix:latest-cash-close": "node scripts/fix-latest-cash-close.js",
     "import:stock": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/import-stock-xlsx.ps1",
     "cleanup:categories": "node scripts/cleanup-categories.js",
-    "test:timeclock": "node scripts/test-timeclock-summary.js && node scripts/test-timeclock-scheduling.js && node scripts/test-timeclock-swap-selection.js && node scripts/test-timeclock-location.js",
+    "test:timeclock": "node scripts/test-timeclock-summary.js && node scripts/test-timeclock-scheduling.js && node scripts/test-timeclock-swap-selection.js && node scripts/test-timeclock-location.js && node scripts/test-timeclock-attempts.js",
     "check": "node --check app.js && node --check src/electron/main.js && node --check src/server/api.js && node --check src/server/database.js && node --check src/server/fiscal.js && node --check src/server/schema.js && node --check src/server/public.js && node --check src/server/timeclock-scheduling.js && node --check timeclock/app.js && node --check timeclock/sw.js"
   },
   "dependencies": {
