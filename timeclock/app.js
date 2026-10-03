@@ -424,19 +424,45 @@ async function loadSwapOptions() {
   if (select) { select.disabled = true; select.innerHTML = '<option value="">Carregando horarios...</option>'; }
   const submit = document.querySelector('.swap-form button[type="submit"]');
   if (submit) submit.disabled = true;
+  const feedback = document.querySelector('.swap-selection-feedback');
+  if (feedback) feedback.textContent = "Carregando horarios...";
   try {
     const options = await api(`/timeclock/swaps/options?date=${encodeURIComponent(date)}`);
     if (request !== swapOptionsRequest || currentTab !== "swaps") return;
     swapOptions = options;
-    select.innerHTML = '<option value="">Escolha um colega</option>' + options.employees.map((employee) => `<option value="${escapeHtml(employee.id)}" ${!employee.schedule || employee.schedule.workingDay === false || employee.schedule.source === "swap" ? "disabled" : ""}>${escapeHtml(employee.name)} - ${employee.schedule ? employee.schedule.workingDay === false ? "Folga" : `${employee.schedule.startTime} / ${employee.schedule.endTime}${employee.schedule.source === "swap" ? " (Ja tem troca)" : ""}` : "Sem horario definido"}</option>`).join("");
-    if (options.employees.some((employee) => employee.id === previous && employee.schedule?.source === "regular" && employee.schedule.workingDay !== false)) select.value = previous;
-    select.disabled = !options.ownSchedule || options.ownSchedule.workingDay === false || options.ownSchedule.source === "swap";
-    submit.disabled = select.disabled;
+    select.innerHTML = '<option value="">Escolha um colega</option>' + options.employees.map((employee) => `<option value="${escapeHtml(employee.id)}">${escapeHtml(employee.name)} - ${employee.schedule ? employee.schedule.workingDay === false ? "Folga" : `${employee.schedule.startTime} / ${employee.schedule.endTime}${employee.schedule.source === "swap" ? " (Ja tem troca)" : ""}` : "Sem horario definido"}</option>`).join("");
+    if (options.employees.some((employee) => employee.id === previous)) select.value = previous;
+    select.disabled = false;
     document.querySelector('.swap-own-schedule').textContent = options.ownSchedule ? options.ownSchedule.workingDay === false ? "Voce esta de folga neste dia." : `Seu horario em ${dayLabel(date)}: ${options.ownSchedule.startTime} - ${options.ownSchedule.endTime}${options.ownSchedule.source === "swap" ? " (troca aceita)" : ""}` : "Seu horario precisa ser configurado pelo administrador.";
+    updateSwapSelection();
   } catch (error) {
     if (request !== swapOptionsRequest || currentTab !== "swaps") return;
     document.querySelector('.swap-own-schedule').textContent = error.message;
+    select.innerHTML = '<option value="">Horarios indisponiveis</option>';
+    if (feedback) feedback.textContent = "Toque em Atualizar pedidos para tentar novamente.";
   }
+}
+
+function updateSwapSelection() {
+  const form = document.querySelector('.swap-form');
+  if (!form || !swapOptions) return;
+  const colleague = swapOptions.employees.find((employee) => employee.id === form.elements.targetId.value);
+  const own = swapOptions.ownSchedule;
+  let message = "";
+  if (!own) message = "O administrador precisa configurar seu horario em Equipe.";
+  else if (own.workingDay === false) message = "Escolha um dia em que voce tenha expediente.";
+  else if (own.source === "swap") message = "Voce ja tem uma troca aceita nesta data. Escolha outro dia.";
+  else if (!swapOptions.employees.length) message = "Nenhum outro funcionario ativo disponivel.";
+  else if (!colleague) message = "Selecione o colega para conferir os horarios.";
+  else if (!colleague.schedule) message = "O administrador precisa configurar o horario deste colega em Equipe.";
+  else if (colleague.schedule.workingDay === false) message = "Este colega esta de folga. Escolha outro colega ou dia.";
+  else if (colleague.schedule.source === "swap") message = "Este colega ja tem uma troca aceita nesta data.";
+  else if (own.startTime === colleague.schedule.startTime && own.endTime === colleague.schedule.endTime) message = "Voces ja tem o mesmo horario nesta data.";
+  form.querySelector('.swap-selection-feedback').textContent = message;
+  const preview = form.querySelector('.swap-selection-preview');
+  preview.hidden = Boolean(message);
+  preview.innerHTML = message ? "" : `<div class="swap-person"><span>Seu horario apos o aceite</span><strong>${colleague.schedule.startTime} - ${colleague.schedule.endTime}</strong></div><div class="swap-person"><span>${escapeHtml(colleague.name)} apos o aceite</span><strong>${own.startTime} - ${own.endTime}</strong></div>`;
+  form.querySelector('button[type="submit"]').disabled = Boolean(message) || swapBusy;
 }
 
 async function requestSwap(event) {
@@ -490,7 +516,9 @@ function swapsView() {
     <details class="admin-settings" open><summary>Solicitar troca por um dia</summary><form class="settings-grid swap-form" onsubmit="requestSwap(event)">
       <label>Dia da troca<input name="swapDate" type="date" value="${date}" min="${date}" required onchange="loadSwapOptions()" /></label>
       <div class="swap-own-schedule muted">Carregando horarios...</div>
-      <label>Trocar com<select name="targetId" required disabled><option value="">Carregando...</option></select></label>
+      <label>Trocar com<select name="targetId" required disabled onchange="updateSwapSelection()"><option value="">Carregando...</option></select></label>
+      <p class="swap-selection-feedback muted" aria-live="polite"></p>
+      <div class="swap-selection-preview" hidden></div>
       <label>Motivo<textarea name="reason" rows="3" maxlength="255" required placeholder="Motivo do pedido"></textarea></label>
       <button type="submit" disabled>${icon("send")} Enviar pedido</button>
     </form></details>

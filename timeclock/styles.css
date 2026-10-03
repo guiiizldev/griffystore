@@ -188,6 +188,8 @@ summary::-webkit-details-marker { display: none; }
 .work-days legend { font-size: 12px; color: var(--muted); }
 .work-days label { display: flex; align-items: center; gap: 6px; min-height: 44px; font-size: 12px; }
 .work-days input { width: 18px; height: 18px; margin: 0; padding: 0; accent-color: var(--brand); }
+.swap-selection-feedback { margin: 0; font-size: 12px; }
+.swap-selection-preview { border-left: 2px solid var(--brand); padding-left: 12px; }
 .attendance-badge.awaiting, .attendance-badge.off { color: var(--muted); }
 
 .login { width: min(440px, 100%); min-height: 100svh; margin: 0 auto; display: grid; align-content: center; gap: 32px; padding: calc(30px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom)); }
