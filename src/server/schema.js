@@ -464,7 +464,7 @@ async function migrate() {
   await seedSetting(connection, "sales.cancel_operator_ids", "[]");
   await seedSetting(connection, "timeclock.store_latitude", "");
   await seedSetting(connection, "timeclock.store_longitude", "");
-  await seedSetting(connection, "timeclock.allowed_radius_meters", "150");
+  await seedSetting(connection, "timeclock.allowed_radius_meters", "15");
   for (const sql of seeds) await connection.query(sql);
   console.log(`Banco preparado: ${config.database} em ${config.host}:${config.port}`);
 }

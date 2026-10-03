@@ -7,6 +7,7 @@ const { query, db, closeDb } = require("./database");
 const { migrate } = require("./schema");
 const { issueFiscalDocument } = require("./fiscal");
 const packageInfo = require("../../package.json");
+const { coordinate, maxRadius, validateLocation } = require("./timeclock-location");
 const { scheduleToday, clockParts, entryAtSql, entryBusinessDateSql, regularSchedule, effectiveSchedule, completeAttendance, loadScheduleData, loadSwaps, registerScheduling } = require("./timeclock-scheduling");
 
 function toNumber(value) {
@@ -56,7 +57,7 @@ function bearerToken(req) {
 }
 
 function requireRoleToken(req, roles = []) {
-  const token = verifyAdminToken(bearerToken(req));
+  const token = req.timeclockAuthChecked ? req.timeclockUser : verifyAdminToken(bearerToken(req));
   if (!token || (roles.length && !roles.includes(token.role))) return null;
   return token;
 }
@@ -111,17 +112,6 @@ function mapTimeEntry(row) {
     ipAddress: row.ip_address,
     note: row.note,
   };
-}
-
-function distanceMeters(aLat, aLng, bLat, bLng) {
-  const toRad = (value) => (Number(value) * Math.PI) / 180;
-  const earth = 6371000;
-  const dLat = toRad(bLat - aLat);
-  const dLng = toRad(bLng - aLng);
-  const x =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  return Math.round(earth * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)));
 }
 
 function timeClockSummary(entries, startTime = "09:00", tolerance = 10, scheduleForDay = null) {
@@ -627,6 +617,18 @@ function createApp(options = {}) {
     next();
   });
   app.use(express.json({ limit: "8mb" }));
+  app.use("/api/timeclock", async (req, res, next) => {
+    req.timeclockAuthChecked = true;
+    req.timeclockUser = null;
+    try {
+      const claims = verifyAdminToken(bearerToken(req));
+      if (claims) {
+        const users = await query("SELECT id, name, role FROM users WHERE id = :id AND active = 1 LIMIT 1", { id: claims.id });
+        if (users[0]) req.timeclockUser = { ...claims, ...users[0] };
+      }
+      next();
+    } catch (error) { next(error); }
+  });
   app.use("/assets", express.static(path.join(__dirname, "../../assets")));
   app.use("/store-assets", express.static(storeAssetsPath));
   app.use("/ponto", express.static(timeClockPath));
@@ -977,25 +979,15 @@ function createApp(options = {}) {
       return;
     }
     const settings = mapSettings(await query("SELECT setting_key AS `key`, setting_value AS value FROM app_settings WHERE setting_key LIKE 'timeclock.%'"));
-    const storeLat = Number(settings["timeclock.store_latitude"] || 0);
-    const storeLng = Number(settings["timeclock.store_longitude"] || 0);
-    const allowedRadius = Number(settings["timeclock.allowed_radius_meters"] || 150);
-    const latitude = Number(req.body.latitude);
-    const longitude = Number(req.body.longitude);
-    const hasStoreLocation = Boolean(storeLat && storeLng);
-    const distance = hasStoreLocation ? distanceMeters(storeLat, storeLng, latitude, longitude) : null;
-    const locationStatus = !hasStoreLocation ? "Loja sem local" : distance <= allowedRadius ? "Dentro do raio" : "Fora do raio";
+    const location = validateLocation(settings, req.body);
+    if (location.error) return res.status(400).json({ error: location.error });
     const entry = {
       id: uid("tc"),
       userId: user.id,
       userName: user.name,
       type,
       source: req.body.source || "web",
-      latitude,
-      longitude,
-      accuracy: req.body.accuracy === undefined ? null : Number(req.body.accuracy || 0),
-      distanceMeters: distance,
-      locationStatus,
+      ...location,
       photoData: String(req.body.photoData).slice(0, 5_000_000),
       deviceInfo: String(req.body.deviceInfo || req.get("User-Agent") || "").slice(0, 255),
       ipAddress: String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].slice(0, 80),
@@ -1068,12 +1060,17 @@ function createApp(options = {}) {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) return res.status(400).json({ error: "Horario de entrada invalido." });
     const tolerance = Number(req.body.lateToleranceMinutes ?? 10);
     if (!Number.isInteger(tolerance) || tolerance < 0 || tolerance > 120) return res.status(400).json({ error: "Tolerancia deve ser entre 0 e 120 minutos." });
+    const radius = Number(req.body.allowedRadiusMeters ?? maxRadius);
+    if (!Number.isFinite(radius) || radius < 1 || radius > maxRadius) return res.status(400).json({ error: "O raio deve ser entre 1 e 15 metros." });
+    const storeLatitude = coordinate(req.body.storeLatitude, 90);
+    const storeLongitude = coordinate(req.body.storeLongitude, 180);
+    if (storeLatitude === null || storeLongitude === null) return res.status(400).json({ error: "Salve a latitude e longitude da entrada da loja." });
     const allowed = {
       "timeclock.start_time": startTime,
       "timeclock.late_tolerance_minutes": String(tolerance),
-      "timeclock.store_latitude": req.body.storeLatitude || "",
-      "timeclock.store_longitude": req.body.storeLongitude || "",
-      "timeclock.allowed_radius_meters": String(Number(req.body.allowedRadiusMeters || 150)),
+      "timeclock.store_latitude": String(storeLatitude),
+      "timeclock.store_longitude": String(storeLongitude),
+      "timeclock.allowed_radius_meters": String(radius),
     };
     for (const [key, value] of Object.entries(allowed)) {
       await query(

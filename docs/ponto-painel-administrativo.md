@@ -34,6 +34,17 @@ e registrada normalmente. A troca nao pode ser aceita depois que qualquer
 um dos dois ja tenha batido ponto naquele dia. Folgas e horarios conflitantes
 impedem a troca; se o horario habitual mudar antes do aceite, envie novo pedido.
 
+## Localizacao da loja
+
+O ponto exige coordenadas da entrada da loja e raio de 1 a 15 metros.
+Em Equipe, abra Configuracoes de jornada e local. Estando na entrada da
+Rua Maragogi, 27, Penha, Rio de Janeiro, toque em Localizar entrada da loja
+e Salvar configuracoes. Nao use uma coordenada aproximada de busca por endereco.
+Sem coordenadas, fora do raio ou com precisao GPS maior que o raio, a batida
+e bloqueada. Ative a localizacao precisa no celular. O GPS e aproximado:
+nao delimita exatamente a calcada nem comprova sozinho a presenca fisica.
+Contas excluidas ou inativas perdem acesso ao ponto mesmo com sessao anterior.
+
 ## Atualizacao na VPS
 
 ```bash

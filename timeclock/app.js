@@ -703,23 +703,29 @@ function adminView() {
       <label>Limite de atraso (min)<input name="lateToleranceMinutes" type="number" min="0" max="120" required value="${escapeHtml(adminSummary?.settings?.["timeclock.late_tolerance_minutes"] ?? 10)}" /></label>
       <label>Latitude<input name="storeLatitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_latitude"] || "")}" placeholder="-22.0000000" /></label>
       <label>Longitude<input name="storeLongitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_longitude"] || "")}" placeholder="-43.0000000" /></label>
-      <label>Raio permitido em metros<input name="allowedRadiusMeters" type="number" min="10" value="${escapeHtml(adminSummary?.settings?.["timeclock.allowed_radius_meters"] || "150")}" /></label>
-      <button type="button" onclick="fillCurrentLocation()">Usar local atual</button>
+      <label>Raio permitido em metros<input name="allowedRadiusMeters" type="number" min="1" max="15" required value="${Math.min(15, Number(adminSummary?.settings?.["timeclock.allowed_radius_meters"] || 15))}" /></label>
+      <button type="button" class="secondary" onclick="fillCurrentLocation(this)">${icon("map-pin")} Localizar entrada da loja</button>
+      <p class="location-feedback muted" aria-live="polite"></p>
       <button type="submit">Salvar configuracoes</button>
     </form>
     </details>
   </section>`;
 }
 
-async function fillCurrentLocation() {
+async function fillCurrentLocation(button) {
+  const form = button.closest('form');
+  const feedback = form.querySelector('.location-feedback');
+  button.disabled = true;
+  feedback.textContent = "Buscando GPS...";
   try {
     const position = await getPosition();
-    document.querySelector('input[name="storeLatitude"]').value = position.coords.latitude.toFixed(7);
-    document.querySelector('input[name="storeLongitude"]').value = position.coords.longitude.toFixed(7);
+    if (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy > 15 || position.coords.accuracy <= 0) throw new Error("GPS impreciso. Ative a localizacao precisa e tente novamente na entrada da loja.");
+    form.elements.storeLatitude.value = position.coords.latitude.toFixed(7);
+    form.elements.storeLongitude.value = position.coords.longitude.toFixed(7);
+    feedback.textContent = `Precisao GPS: ${Math.round(position.coords.accuracy)} m. Salve as configuracoes para confirmar.`;
   } catch (error) {
-    statusText = error.message;
-    render();
-  }
+    feedback.textContent = error.message || "Nao foi possivel localizar. Libere o GPS no navegador.";
+  } finally { button.disabled = false; }
 }
 
 async function saveTimeSettings(event) {

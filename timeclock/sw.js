@@ -1,5 +1,5 @@
-const cacheName = "griffy-ponto-20261002-4";
-const shellFiles = ["./index.html", "./styles.css?v=20261002-4", "./app.js?v=20261002-4", "./vendor/lucide.min.js", "./logo.png", "./app-icon.png", "./manifest.webmanifest"];
+const cacheName = "griffy-ponto-20261003-1";
+const shellFiles = ["./index.html", "./styles.css?v=20261003-1", "./app.js?v=20261003-1", "./vendor/lucide.min.js", "./logo.png", "./app-icon.png", "./manifest.webmanifest"];
 const shellUrls = new Set(shellFiles.map((file) => new URL(file, self.registration.scope).pathname));
 
 self.addEventListener("install", (event) => {
