@@ -303,13 +303,6 @@ const statements = [
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`,
-  `CREATE TABLE IF NOT EXISTS barcode_scans (
-    id VARCHAR(40) PRIMARY KEY,
-    code VARCHAR(120) NOT NULL,
-    device_name VARCHAR(120) NULL,
-    used TINYINT(1) NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`,
   `CREATE TABLE IF NOT EXISTS time_clock_schedules (
     user_id VARCHAR(40) NOT NULL,
     effective_from DATE NOT NULL,

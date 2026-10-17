@@ -600,7 +600,6 @@ function createApp(options = {}) {
   const storeAssetsPath = path.join(__dirname, "../../store/assets");
   const storeBuildPath = path.join(__dirname, "../../store-app/dist");
   const timeClockPath = path.join(__dirname, "../../timeclock");
-  const scannerPath = path.join(__dirname, "../../scanner");
   const app = express();
   app.use((req, res, next) => {
     const allowedOrigin = process.env.STOREFRONT_ALLOWED_ORIGIN || "*";
@@ -633,7 +632,7 @@ function createApp(options = {}) {
   app.use("/assets", express.static(path.join(__dirname, "../../assets")));
   app.use("/store-assets", express.static(storeAssetsPath));
   app.use("/ponto", express.static(timeClockPath));
-  app.use("/scanner", express.static(scannerPath));
+  app.use(["/scanner", "/api/barcode-scans"], (_req, res) => res.status(410).json({ error: "O scanner pelo celular foi desativado." }));
   app.use("/updates", express.static(path.join(__dirname, "../../updates"), {
     setHeaders: (res, filePath) => {
       if (filePath.endsWith(".json")) res.setHeader("Cache-Control", "no-store");
@@ -1117,31 +1116,6 @@ function createApp(options = {}) {
     }
     await query("DELETE FROM products");
     res.json({ ok: true });
-  });
-
-  app.post("/api/barcode-scans", async (req, res) => {
-    const code = String(req.body.code || "").trim();
-    if (!code) {
-      res.status(400).json({ error: "Codigo vazio." });
-      return;
-    }
-    const scan = { id: uid("scan"), code, deviceName: req.body.deviceName || "Celular" };
-    await query(
-      "INSERT INTO barcode_scans (id, code, device_name) VALUES (:id, :code, :deviceName)",
-      scan,
-    );
-    res.json({ ok: true, scan });
-  });
-
-  app.post("/api/barcode-scans/consume", async (_req, res) => {
-    const rows = await query("SELECT * FROM barcode_scans WHERE used = 0 ORDER BY created_at ASC LIMIT 1");
-    const scan = rows[0];
-    if (!scan) {
-      res.json({ code: "" });
-      return;
-    }
-    await query("UPDATE barcode_scans SET used = 1 WHERE id = :id", { id: scan.id });
-    res.json({ id: scan.id, code: scan.code, deviceName: scan.device_name, createdAt: scan.created_at });
   });
 
   app.get("/api/state", async (_req, res) => {

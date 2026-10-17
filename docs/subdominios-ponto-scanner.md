@@ -1,10 +1,9 @@
-# Subdominios para ponto e scanner
+# Subdominio do ponto
 
 No DNS da Hostinger, crie:
 
 ```text
 A     ponto      IP_DA_VPS
-A     scanner    IP_DA_VPS
 ```
 
 No Nginx da VPS, edite:
@@ -39,28 +38,6 @@ server {
     }
 }
 
-server {
-    listen 80;
-    server_name scanner.griffystore.com.br;
-
-    location / {
-        proxy_pass http://127.0.0.1:3789/scanner/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:3789/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
 ```
 
 Teste e recarregue:
@@ -73,8 +50,11 @@ systemctl reload nginx
 Quando o DNS propagar, emita SSL:
 
 ```bash
-certbot --nginx -d ponto.griffystore.com.br -d scanner.griffystore.com.br
+certbot --nginx -d ponto.griffystore.com.br
 ```
 
-O scanner por camera exige HTTPS no celular.
+O scanner pelo celular foi removido. O antigo subdominio responde HTTP 410
+e nao encaminha mais requisicoes para a API. Nao recrie esse servico.
+O campo de codigo do produto e os leitores fisicos continuam funcionando.
+Registros antigos em barcode_scans foram preservados, sem uso pelo sistema.
 

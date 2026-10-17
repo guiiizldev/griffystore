@@ -595,7 +595,6 @@ function posScreen() {
           <div class="toolbar">
             <input id="productSearch" placeholder="Buscar produto ou codigo" oninput="setUi('productSearch', this.value)" value="${valueOf("productSearch")}" />
             <button class="btn primary" onclick="addBySearch()">Adicionar codigo</button>
-            <button class="btn" onclick="pullMobileScan()">Puxar scanner</button>
             <button class="btn" onclick="openModal('product')">Novo item</button>
           </div>
         </div>
@@ -1768,23 +1767,7 @@ function productFormFull() {
   const product = modal.id ? state.products.find((p) => p.id === modal.id) || {} : {};
   return formShell(modal.id ? "Editar produto" : "Cadastrar produto", "saveProduct(event)", `
     <div class="split">
-      <label class="code-scan-field">Codigo
-        <span class="input-with-icon">
-          <input name="code" value="${product.code || ""}" />
-          <button class="icon-btn scan-code-btn" type="button" onclick="pullScanToProductCode()" title="Puxar codigo do scanner" aria-label="Puxar codigo do scanner">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 7V5h2" />
-              <path d="M18 5h2v2" />
-              <path d="M20 17v2h-2" />
-              <path d="M6 19H4v-2" />
-              <path d="M7 8v8" />
-              <path d="M10 8v8" />
-              <path d="M14 8v8" />
-              <path d="M17 8v8" />
-            </svg>
-          </button>
-        </span>
-      </label>
+      <label>Codigo<input name="code" value="${product.code || ""}" /></label>
       <label>Nome<input name="name" value="${product.name || ""}" required /></label>
       <label>Categoria<select name="category">${categoryOptions(product.category || "")}</select></label>
       <label>Subcategoria<input name="subcategory" value="${product.subcategory || ""}" /></label>
@@ -2734,78 +2717,6 @@ function addBySearch() {
     return;
   }
   addCart(product.id);
-}
-
-async function pullMobileScan() {
-  if (!apiOnline) {
-    alert("Scanner mobile precisa da API conectada.");
-    return;
-  }
-  try {
-    const scan = await consumeBarcodeScan();
-    if (!scan.code) {
-      alert("Nenhum codigo enviado pelo celular.");
-      return;
-    }
-    ui.productSearch = scan.code;
-    const product = state.products.find((p) => String(p.code || "").toLowerCase() === String(scan.code).toLowerCase());
-    if (!product) {
-      alert(`Codigo ${scan.code} recebido, mas produto nao encontrado.`);
-      render();
-      return;
-    }
-    addCart(product.id);
-    alert(`Produto adicionado pelo scanner: ${product.name}`);
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-async function consumeBarcodeScan() {
-  return apiSend("/barcode-scans/consume", {});
-}
-
-function wait(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function waitForBarcodeScan({ attempts = 25, interval = 1000 } = {}) {
-  for (let index = 0; index < attempts; index += 1) {
-    const scan = await consumeBarcodeScan();
-    if (scan.code) return scan;
-    await wait(interval);
-  }
-  return { code: "" };
-}
-
-async function pullScanToProductCode() {
-  if (!apiOnline) {
-    alert("Scanner mobile precisa da API conectada.");
-    return;
-  }
-  try {
-    notify("Aguardando leitura do scanner no celular...", "info");
-    const scan = await waitForBarcodeScan();
-    if (!scan.code) {
-      notify("Nenhum codigo recebido. Leia o produto no celular e tente novamente.", "warn");
-      return;
-    }
-    const codeInput = document.querySelector('.modal input[name="code"]');
-    if (!codeInput) {
-      alert("Campo de codigo nao encontrado.");
-      return;
-    }
-    codeInput.value = scan.code;
-    codeInput.dispatchEvent(new Event("input", { bubbles: true }));
-    const duplicated = state.products.find((product) => product.id !== modal.id && String(product.code || "").toLowerCase() === String(scan.code).toLowerCase());
-    if (duplicated) {
-      notify(`Codigo ${scan.code} ja esta cadastrado em ${duplicated.name}.`, "warn");
-      return;
-    }
-    notify(`Codigo ${scan.code} preenchido no produto.`, "success");
-  } catch (error) {
-    alert(error.message);
-  }
 }
 
 function setCartQty(id, qtyValue) {
