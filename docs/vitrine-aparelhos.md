@@ -12,11 +12,17 @@ selecione CSV/TXT UTF-8. Ler lista gera revisao sem publicar. O rascunho e salvo
 no banco, acessivel somente a administradores ativos.
 
 No formato de WhatsApp, o leitor reconhece preco antes do modelo, memoria,
-emojis de cor, porcentagem de bateria e variantes por cor. Nao escolhe entre
-precos conflitantes nem usa valor de troca como preco de venda. Marcacoes X,
-cores interpretadas e quantidade inicial de uma unidade precisam de revisao.
-Condicao e cores ausentes nao sao inventadas. Defina os dados faltantes,
+emojis de cor, porcentagem de bateria e variantes por cor. O primeiro preco
+informado e o valor de venda; valores posteriores e de troca nao sao publicados.
+O simbolo X e decorativo e nao indica falta de estoque. Cores interpretadas
+e quantidade inicial de uma unidade precisam de revisao.
+Condicao ausente precisa ser definida; cores ausentes aparecem como
+"Cores sob consulta", sem inventar uma cor. Defina os dados faltantes,
 confirme a conferencia e use Revisar dados antes de Publicar.
+
+A condicao pode vir no modelo (`iPhone 17 Pro Max 256GB Lacrado`), na linha
+seguinte (`Condicao: Seminovo`) ou em um titulo de grupo (`LACRADOS`,
+`SEMINOVOS`). Nao ha regra permanente que considere um modelo sempre lacrado.
 
 O modelo CSV pode ser baixado no painel. Campos: modelo, memoria, cor,
 condicao, preco, quantidade, imagem, observacoes e bateria (opcional).

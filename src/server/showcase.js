@@ -107,9 +107,9 @@ function validateDevice(input) {
     throw new Error("Quantidade deve ser um inteiro entre 0 e 9999.");
   const color = String(input.color || "").trim();
   const notes = String(input.notes || "").trim();
-  if (!color || color.length > 60 || notes.length > 1000)
+  if (color.length > 60 || notes.length > 1000)
     throw new Error(
-      "Informe a cor (ate 60 caracteres) e observacoes de ate 1000 caracteres.",
+      "Cor deve ter ate 60 caracteres e observacoes ate 1000 caracteres.",
     );
   const image = safeImage(String(input.image || "").trim());
   const battery =
@@ -152,7 +152,21 @@ function chatList(text) {
   const rows = [];
   let current = null,
     variants = [],
-    pendingPrice = "";
+    pendingPrice = "",
+    sectionCondition = "";
+  const conditionToken = /\b(lacrados?|semi[\s-]?novos?|novos?|usados?)\b/i;
+  const getCondition = (value) => {
+    const token = conditionToken.exec(value)?.[0];
+    if (!token) return "";
+    return (
+      {
+        lacrado: "Lacrado",
+        seminovo: "Seminovo",
+        novo: "Novo",
+        usado: "Seminovo",
+      }[normalize(token).replace(/s$/, "")] || ""
+    );
+  };
   const colors = [
     ["\u26ab", "Preto"],
     ["\u26aa", "Branco"],
@@ -167,7 +181,7 @@ function chatList(text) {
       const input = {
         model: current.model,
         storage: current.storage,
-        condition: "",
+        condition: current.condition,
         color: current.color || "",
         battery: current.battery ?? "",
         price: current.price || "",
@@ -177,7 +191,7 @@ function chatList(text) {
       };
       const prices = [
         ...new Set(
-          [...(variant.prices || []), ...current.prices].filter(Boolean),
+          [...current.prices, ...(variant.prices || [])].filter(Boolean),
         ),
       ];
       const issues = [
@@ -185,13 +199,7 @@ function chatList(text) {
         ...current.issues,
         ...(variant.issues || []),
       ];
-      if (prices.length === 1) input.price = prices[0];
-      if (prices.length > 1) {
-        input.price = "";
-        issues.push(
-          `Precos diferentes na origem: ${prices.join(" / ")}. Escolha o valor de venda.`,
-        );
-      }
+      if (prices.length) input.price = prices[0];
       delete input.prices;
       delete input.issues;
       rows.push({
@@ -203,20 +211,39 @@ function chatList(text) {
     }
   };
   text.split(/\r?\n/).forEach((raw, index) => {
-    const line = raw.trim();
+    const line = raw.replace(/\u274c/g, "").trim();
     if (!line) return;
+    if (
+      ["lacrados", "seminovos", "novos", "usados"].includes(normalize(line))
+    ) {
+      finish();
+      current = null;
+      variants = [];
+      sectionCondition = getCondition(line);
+      return;
+    }
+    if (
+      /^(?:(?:condi[c\u00e7][a\u00e3]o|estado)\s*:\s*)?(?:lacrado|semi[\s-]?novo|novo|usado)$/i.test(
+        line,
+      )
+    ) {
+      if (current) current.condition = getCondition(line);
+      else sectionCondition = getCondition(line);
+      return;
+    }
     const match =
       /^(iphone\s+(?:\d{1,2}(?:\s*(?:pro\s*max|pro|plus|mini))?|air))\s+(\d{1,4})\s*(gb?|tb)\b(.*)$/i.exec(
         line,
       );
     if (match) {
       finish();
-      const inline = match[4].trim();
+      const inline = match[4].replace(conditionToken, "").trim();
       const extraPrice = inline ? money(inline) : null;
       current = {
         model: match[1].replace(/\s+/g, " "),
         storage: `${match[2]}${match[3].toUpperCase().replace(/^G$/, "GB")}`,
         line: index + 1,
+        condition: getCondition(match[4]) || sectionCondition,
         prices: [
           pendingPrice,
           Number.isFinite(extraPrice) ? extraPrice : "",
@@ -237,11 +264,10 @@ function chatList(text) {
       const prefix = line.split(/\bT\s*:/i)[0];
       const retail = /R\$\s*([\d.,]+)(?:\/([\d.,]+))?/.exec(prefix);
       const issues = ["Cor interpretada de emoji: confirme a cor comercial."];
-      if (line.includes("\u274c"))
-        issues.push("Marcacao X: confirme a disponibilidade.");
       if (/\bT\s*:/i.test(line))
         issues.push("Valor de troca nao sera publicado.");
       variants.push({
+        ...(getCondition(line) ? { condition: getCondition(line) } : {}),
         color: color[1],
         battery: /([0-9]{1,3})\s*%/.exec(line)?.[1] || "",
         prices: retail

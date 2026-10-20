@@ -56,19 +56,41 @@ assert.equal(chat[0].input.price, 2500);
 assert.equal(chat[0].input.condition, "", "Do not guess condition");
 assert.equal(
   chat[1].input.price,
-  "",
-  "Do not choose one of conflicting prices",
+  4200,
+  "Use the first price, including a price preceding the model",
 );
-assert.match(chat[1].warning, /disponibilidade/);
-assert.equal(chat[2].input.price, "");
-assert.match(chat[2].warning, /7500 \/ 7400/);
+assert.equal(
+  chat[1].input.quantity,
+  1,
+  "Decorative X must not mark out of stock",
+);
+assert.ok(!chat[1].warning.includes("Marcacao X"));
+assert.equal(chat[2].input.price, 7500);
+assert.equal(chat[3].input.price, 7600);
 assert.ok(
   !chat[2].warning.includes("7900"),
   "Do not use trade-in prices as retail prices",
 );
 assert.ok(chat.every((row) => row.needsReview));
+const conditions = parseList(
+  "SEMINOVOS\nR$2000\niPhone 13 128GB\nR$8000\niPhone 17 Pro Max 256GB Lacrado\nR$2500\niPhone 14 128GB\nCondicao: Novo",
+);
+assert.deepEqual(
+  conditions.map((row) => row.input.condition),
+  ["Seminovo", "Lacrado", "Novo"],
+);
+assert.equal(
+  conditions[0].device.color,
+  "",
+  "Absent color must stay unknown, not guessed",
+);
+assert.equal(
+  parseList("R$8000\niPhone 17 Pro Max 256GB")[0].input.condition,
+  "",
+  "Do not assume future iPhone 17 listings are sealed",
+);
 console.log(
-  "Showcase parser: CSV, WhatsApp, battery, duplicate detection, ambiguous prices and exact-model images passed.",
+  "Showcase parser: CSV, WhatsApp, battery, first price, decorative X, conditions and exact-model images passed.",
 );
 
 async function integration() {

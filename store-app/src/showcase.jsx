@@ -67,7 +67,7 @@ function chat(config, device) {
   );
   const phone = digits && !digits.startsWith("55") ? `55${digits}` : digits;
   const message = device
-    ? `Ola! Vi na vitrine da Griffy Store: ${device.model}, ${device.storage}, ${device.color}, ${device.condition}, por ${money.format(device.price)}. Ainda esta disponivel?`
+    ? `Ola! Vi na vitrine da Griffy Store: ${device.model}, ${device.storage}, ${device.color || "cores sob consulta"}, ${device.condition}, por ${money.format(device.price)}. Ainda esta disponivel?`
     : "Ola! Gostaria de consultar os aparelhos disponiveis na Griffy Store.";
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
@@ -135,7 +135,7 @@ function DeviceDetails({ device, config, close }) {
           <dl>
             {[
               ["Armazenamento", device.storage],
-              ["Cor", device.color],
+              ["Cor", device.color || "Cores sob consulta"],
               ["Condicao", device.condition],
               ["Disponibilidade", "Em estoque"],
               ...(device.battery !== null && device.battery !== undefined
@@ -342,7 +342,8 @@ export function DeviceShowcase({ config }) {
                   </div>
                   <h2>{device.model}</h2>
                   <p className="device-variant">
-                    {device.storage} <span>/</span> {device.color}
+                    {device.storage} <span>/</span>{" "}
+                    {device.color || "Cores sob consulta"}
                   </p>
                   <strong className="device-price">
                     {money.format(device.price)}
@@ -801,7 +802,7 @@ export function ShowcaseAdmin({ token }) {
                 {device.model} · {device.storage}
               </strong>
               <span>
-                {device.color} · {device.condition} ·{" "}
+                {device.color || "Cores sob consulta"} · {device.condition} ·{" "}
                 {money.format(device.price)} · {device.quantity} un.
               </span>
               <small>
