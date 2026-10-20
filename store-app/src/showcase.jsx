@@ -211,9 +211,6 @@ export function DeviceShowcase({ config }) {
     <main className="device-showcase">
       <section className="showcase-heading">
         <div className="container">
-          <a className="showcase-back" href="/">
-            Griffy Store <ArrowUpRight size={14} />
-          </a>
           <div className="showcase-title">
             <div>
               <span className="showcase-kicker">VITRINE ONLINE</span>
@@ -559,7 +556,7 @@ export function ShowcaseAdmin({ token }) {
         </div>
         <a
           className="btn ghost"
-          href="/catalogo"
+          href="/"
           target="_blank"
           rel="noreferrer"
         >

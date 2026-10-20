@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { DeviceShowcase, ShowcaseAdmin } from "./showcase";
-import { MessageCircle, Menu, X } from "lucide-react";
+import { MessageCircle } from "lucide-react";
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
@@ -96,9 +96,7 @@ function useStoreConfig() {
   return { config, loading, reloadConfig: loadConfig };
 }
 
-function Header({ config, cartCount, onCart }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const path = window.location.pathname;
+function Header({ config }) {
   const contactText = "Ola, vim pela loja virtual da Griffy Store.";
   return (
     <header className="site-header">
@@ -106,21 +104,8 @@ function Header({ config, cartCount, onCart }) {
         <a className="brand" href="/">
           <img src="/store-assets/logoretangular-enhanced.png" alt="GRIFFY STORE" />
         </a>
-        <nav id="store-navigation" className={menuOpen ? "mobile-open" : ""}>
-          <a className={path === "/" ? "active" : ""} href="/">Inicio</a>
-          <a className={path.startsWith("/catalogo") || path.startsWith("/vitrine") ? "active" : ""} href="/catalogo">Aparelhos</a>
-          <a href="/acessorios">Acessorios</a>
-          <a href="/#assistencia">Assistencia</a>
-          <a href="/#contato">Contato</a>
-          <a className="mobile-admin-link" href="/admin">Administrador</a>
-        </nav>
         <div className="header-actions">
-          <button className="store-menu-button" type="button" title={menuOpen ? "Fechar menu" : "Abrir menu"} aria-label={menuOpen ? "Fechar menu" : "Abrir menu"} aria-expanded={menuOpen} aria-controls="store-navigation" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
-          <a className="admin-link" href="/admin">Administrador</a>
-          <a className="btn primary compact" href={whatsappUrl(config, contactText)} target="_blank" rel="noreferrer">WhatsApp</a>
-          {onCart ? (
-            <button className="cart-button" type="button" onClick={onCart}>Carrinho <span>{cartCount}</span></button>
-          ) : null}
+          <a className="btn primary compact" href={whatsappUrl(config, contactText)} target="_blank" rel="noreferrer"><MessageCircle size={18} aria-hidden="true" /> WhatsApp</a>
         </div>
       </div>
     </header>
@@ -863,26 +848,13 @@ function Footer({ config }) {
 
 function App() {
   const { config, reloadConfig } = useStoreConfig();
-  const [cartCount, setCartCount] = useState(() => JSON.parse(localStorage.getItem("griffy-web-cart") || "[]").reduce((sum, item) => sum + item.qty, 0));
   const path = window.location.pathname;
-  const isCatalog = path.startsWith("/acessorios");
-  const isShowcase = path.startsWith("/catalogo") || path.startsWith("/vitrine");
-  const isAdmin = path.startsWith("/admin");
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCartCount(JSON.parse(localStorage.getItem("griffy-web-cart") || "[]").reduce((sum, item) => sum + item.qty, 0));
-    }, 500);
-    return () => clearInterval(timer);
-  }, []);
+  const isAdmin = path === "/admin" || path === "/admin/";
 
   return (
     <>
-      <PromoBar promo={config.promo} />
-      <Header config={config} cartCount={cartCount} onCart={isCatalog ? () => document.dispatchEvent(new CustomEvent("griffy-open-cart")) : null} />
-      {isAdmin ? <Admin config={config} reloadConfig={reloadConfig} /> : isShowcase ? <DeviceShowcase config={config} /> : isCatalog ? <Catalog config={config} /> : <Home config={config} />}
-      {!isAdmin ? <Footer config={config} /> : null}
-      {!isAdmin && !isShowcase ? <a className="whatsapp-fab" href={whatsappUrl(config, "Ola, vim pela loja virtual da Griffy Store.")} target="_blank" rel="noreferrer" aria-label="Falar no WhatsApp"><MessageCircle size={26} /></a> : null}
+      <Header config={config} />
+      {isAdmin ? <Admin config={config} reloadConfig={reloadConfig} /> : <DeviceShowcase config={config} />}
     </>
   );
 }

@@ -1,13 +1,17 @@
 # Vitrine de aparelhos
 
-Enderecos: `/catalogo` e `/vitrine`. O catalogo anterior fica em `/acessorios`.
+A pagina inicial `/` abre diretamente a vitrine, sem menu de outras paginas.
+Os enderecos antigos, incluindo `/catalogo`, `/vitrine` e `/acessorios`, tambem
+exibem a vitrine. Nao ha carrinho nem as antigas secoes institucionais.
 Compradores consultam modelos, memoria, cor, condicao, preco e bateria
 informada pela loja. O contato abre o WhatsApp com o aparelho selecionado.
 Nao ha cobranca nem reserva automatica nesta vitrine.
 
 ## Administracao
 
-Entre em `/admin` e abra Vitrine de aparelhos. Cole a lista do WhatsApp ou
+Entre diretamente em `/admin` e abra Vitrine de aparelhos. Nao ha botao nem
+link publico para o painel; a autenticacao de administrador continua obrigatoria.
+Cole a lista do WhatsApp ou
 selecione CSV/TXT UTF-8. Ler lista gera revisao sem publicar. O rascunho e salvo
 no banco, acessivel somente a administradores ativos.
 
