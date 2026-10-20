@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
+import { DeviceShowcase, ShowcaseAdmin } from "./showcase";
+import { MessageCircle, Menu, X } from "lucide-react";
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
@@ -95,22 +97,25 @@ function useStoreConfig() {
 }
 
 function Header({ config, cartCount, onCart }) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const path = window.location.pathname;
   const contactText = "Ola, vim pela loja virtual da Griffy Store.";
   return (
     <header className="site-header">
       <div className="container header-inner">
         <a className="brand" href="/">
-          <img src="/store-assets/logo-lovable.png" alt="GRIFFY STORE" />
+          <img src="/store-assets/logoretangular-enhanced.png" alt="GRIFFY STORE" />
         </a>
-        <nav>
+        <nav id="store-navigation" className={menuOpen ? "mobile-open" : ""}>
           <a className={path === "/" ? "active" : ""} href="/">Inicio</a>
-          <a className={path.startsWith("/catalogo") ? "active" : ""} href="/catalogo">Catalogo</a>
-          <a href="/#acessorios">Acessorios</a>
+          <a className={path.startsWith("/catalogo") || path.startsWith("/vitrine") ? "active" : ""} href="/catalogo">Aparelhos</a>
+          <a href="/acessorios">Acessorios</a>
           <a href="/#assistencia">Assistencia</a>
           <a href="/#contato">Contato</a>
+          <a className="mobile-admin-link" href="/admin">Administrador</a>
         </nav>
         <div className="header-actions">
+          <button className="store-menu-button" type="button" title={menuOpen ? "Fechar menu" : "Abrir menu"} aria-label={menuOpen ? "Fechar menu" : "Abrir menu"} aria-expanded={menuOpen} aria-controls="store-navigation" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
           <a className="admin-link" href="/admin">Administrador</a>
           <a className="btn primary compact" href={whatsappUrl(config, contactText)} target="_blank" rel="noreferrer">WhatsApp</a>
           {onCart ? (
@@ -144,17 +149,15 @@ function Home({ config }) {
         <div className="container hero-content">
           <div className="hero-copy">
             <span className="eyebrow">Loja oficial - Penha, Rio de Janeiro</span>
-            <h1>Ha mais de 10 anos<br /><strong>conectando tecnologia,</strong><br />confianca e qualidade.</h1>
-            <p>Venda de iPhones, Androids, assistencia tecnica especializada e acessorios com atendimento de excelencia.</p>
+            <h1>GRIFFY STORE</h1>
+            <p>iPhones, smartphones e acessorios. Encontre seu proximo aparelho na nossa vitrine e fale direto com a loja.</p>
             <div className="hero-actions">
-              <a className="btn primary" href="/catalogo">Ver catalogo</a>
+              <a className="btn primary" href="/catalogo">Ver aparelhos disponiveis</a>
               <a className="btn ghost" href={whatsappUrl(config, contactText)} target="_blank" rel="noreferrer">Falar no WhatsApp</a>
             </div>
             <div className="stats-grid">
-              <div className="glass-card"><strong>10+ anos</strong><span>de mercado</span></div>
-              <div className="glass-card"><strong>+25 mil</strong><span>clientes atendidos</span></div>
-              <div className="glass-card"><strong>Loja fisica</strong><span>na Penha, RJ</span></div>
-              <div className="glass-card"><strong>Garantia</strong><span>produtos e servicos</span></div>
+              <div><strong>Lacrados</strong><span>e seminovos</span></div>
+              <div><strong>Loja fisica</strong><span>Penha, Rio de Janeiro</span></div>
             </div>
           </div>
         </div>
@@ -675,8 +678,9 @@ function Admin({ config, reloadConfig }) {
         ) : (
           <form className="wp-shell" onSubmit={save}>
             <aside className="wp-sidebar">
-              <img src="/store-assets/logo-lovable.png" alt="GRIFFY STORE" />
+              <img src="/store-assets/logoretangular-enhanced.png" alt="GRIFFY STORE" />
               <button type="button" className={section === "dashboard" ? "active" : ""} onClick={() => setSection("dashboard")}>Painel</button>
+              <button type="button" className={section === "showcase" ? "active" : ""} onClick={() => setSection("showcase")}>Vitrine de aparelhos</button>
               <button type="button" className={section === "orders" ? "active" : ""} onClick={() => setSection("orders")}>Pedidos</button>
               <button type="button" className={section === "themes" ? "active" : ""} onClick={() => setSection("themes")}>Temas</button>
               <button type="button" className={section === "promo" ? "active" : ""} onClick={() => setSection("promo")}>Promocao</button>
@@ -691,10 +695,11 @@ function Admin({ config, reloadConfig }) {
                 </div>
                 <div className="admin-button-row">
                   <button className="btn ghost" type="button" onClick={() => { localStorage.removeItem("griffy-site-admin-token"); setToken(""); }}>Sair</button>
-                  <button className="btn primary" type="submit">Salvar alteracoes</button>
+                  {section !== "showcase" ? <button className="btn primary" type="submit">Salvar alteracoes</button> : null}
                 </div>
               </header>
 
+              {section === "showcase" ? <ShowcaseAdmin token={token} /> : null}
               {section === "dashboard" ? (
                 <div className="wp-dashboard">
                   <article className="wp-stat"><span>Tema ativo</span><strong>{form.theme === "auto" ? "Automatico" : allThemes({ themes: form.themes }).find((theme) => theme.id === form.theme)?.name || form.theme}</strong></article>
@@ -860,7 +865,8 @@ function App() {
   const { config, reloadConfig } = useStoreConfig();
   const [cartCount, setCartCount] = useState(() => JSON.parse(localStorage.getItem("griffy-web-cart") || "[]").reduce((sum, item) => sum + item.qty, 0));
   const path = window.location.pathname;
-  const isCatalog = path.startsWith("/catalogo");
+  const isCatalog = path.startsWith("/acessorios");
+  const isShowcase = path.startsWith("/catalogo") || path.startsWith("/vitrine");
   const isAdmin = path.startsWith("/admin");
 
   useEffect(() => {
@@ -874,9 +880,9 @@ function App() {
     <>
       <PromoBar promo={config.promo} />
       <Header config={config} cartCount={cartCount} onCart={isCatalog ? () => document.dispatchEvent(new CustomEvent("griffy-open-cart")) : null} />
-      {isAdmin ? <Admin config={config} reloadConfig={reloadConfig} /> : isCatalog ? <Catalog config={config} /> : <Home config={config} />}
+      {isAdmin ? <Admin config={config} reloadConfig={reloadConfig} /> : isShowcase ? <DeviceShowcase config={config} /> : isCatalog ? <Catalog config={config} /> : <Home config={config} />}
       {!isAdmin ? <Footer config={config} /> : null}
-      {!isAdmin ? <a className="whatsapp-fab" href={whatsappUrl(config, "Ola, vim pela loja virtual da Griffy Store.")} target="_blank" rel="noreferrer" aria-label="Falar no WhatsApp">W</a> : null}
+      {!isAdmin && !isShowcase ? <a className="whatsapp-fab" href={whatsappUrl(config, "Ola, vim pela loja virtual da Griffy Store.")} target="_blank" rel="noreferrer" aria-label="Falar no WhatsApp"><MessageCircle size={26} /></a> : null}
     </>
   );
 }

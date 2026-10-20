@@ -7,6 +7,7 @@ const { query, db, closeDb } = require("./database");
 const { migrate } = require("./schema");
 const { issueFiscalDocument } = require("./fiscal");
 const packageInfo = require("../../package.json");
+const { registerShowcase } = require("./showcase");
 const { coordinate, maxRadius, validateLocation } = require("./timeclock-location");
 const { beginAttempt, failAttempt, loadAttempts, registerAttempts } = require("./timeclock-attempts");
 const { scheduleToday, clockParts, entryAtSql, entryBusinessDateSql, regularSchedule, effectiveSchedule, completeAttendance, loadScheduleData, loadSwaps, registerScheduling } = require("./timeclock-scheduling");
@@ -797,6 +798,8 @@ function createApp(options = {}) {
     await query("UPDATE online_orders SET status = :status WHERE id = :id", { id: req.params.id, status });
     res.json({ ok: true });
   });
+
+  registerShowcase(app, { query, db, requireRoleToken });
 
   app.get("/api/storefront/products", async (req, res) => {
     const search = `%${String(req.query.q || "").trim()}%`;

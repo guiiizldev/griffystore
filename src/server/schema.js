@@ -29,6 +29,23 @@ const categories = [
 ];
 
 const statements = [
+  `CREATE TABLE IF NOT EXISTS storefront_devices (
+    id VARCHAR(64) PRIMARY KEY,
+    model VARCHAR(100) NOT NULL,
+    brand VARCHAR(60) NOT NULL DEFAULT '',
+    storage VARCHAR(20) NOT NULL,
+    color VARCHAR(60) NOT NULL,
+    device_condition VARCHAR(20) NOT NULL,
+    price DECIMAL(12,2) NOT NULL,
+    quantity INT NOT NULL DEFAULT 0,
+    image TEXT NULL,
+    image_kind VARCHAR(20) NOT NULL DEFAULT 'missing',
+    notes TEXT NULL,
+    battery INT NULL,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_showcase_visibility (active, quantity)
+  )`,
   `CREATE TABLE IF NOT EXISTS categories (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(120) NOT NULL UNIQUE,
@@ -436,6 +453,7 @@ async function migrate() {
   await ensureColumn(connection, "time_clock_entries", "device_info", "VARCHAR(255) NULL");
   await ensureColumn(connection, "time_clock_entries", "ip_address", "VARCHAR(80) NULL");
   await ensureColumn(connection, "time_clock_schedules", "work_days", "VARCHAR(20) NOT NULL DEFAULT ''");
+  await ensureColumn(connection, "storefront_devices", "battery", "INT NULL");
   await ensureIndex(connection, "products", "idx_products_code_unique", "CREATE UNIQUE INDEX idx_products_code_unique ON products (code)");
   for (const name of categories) {
     await connection.query("INSERT IGNORE INTO categories (name) VALUES (?)", [name]);
