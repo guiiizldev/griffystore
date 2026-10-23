@@ -9,12 +9,16 @@ async function main() {
   await migrate();
   const app = createApp({ publicMode: true });
   const server = http.createServer(app);
+  server.on("error", failStartup);
   server.listen(port, host, () => {
     console.log(`Griffy Store web rodando em http://${host}:${port}`);
   });
 }
 
-main().catch((error) => {
+function failStartup(error) {
   console.error(error);
-  process.exitCode = 1;
-});
+  // A failed MySQL pool can keep the event loop alive without an HTTP listener.
+  process.exit(1);
+}
+
+main().catch(failStartup);
