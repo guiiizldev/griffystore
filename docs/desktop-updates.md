@@ -7,7 +7,7 @@ electron-builder, com verificacao de integridade do arquivo baixado.
 
 ## Primeira instalacao
 
-A versao 0.2.0 apenas abre o instalador no navegador. Instale a versao 0.2.1
+A versao 0.2.0 apenas abre o instalador no navegador. Instale a versao 0.2.2
 uma vez para ativar o download e a instalacao integrados. Nao e necessario
 apagar o banco nem as configuracoes do usuario.
 
@@ -26,7 +26,7 @@ quando ha venda no carrinho ou salvamento de venda em andamento.
 ## Publicar a proxima versao
 
 1. Executar os testes e incrementar a versao de package.json/package-lock.json.
-2. Enviar o commit ao main e criar uma tag igual a versao, por exemplo v0.2.2.
+2. Enviar o commit ao main e criar uma tag igual a versao, por exemplo v0.2.3.
 3. O workflow Desktop Release no GitHub Actions gera instalador, blockmap,
    latest.yml, latest.json com SHA-256 e ZIP da pasta win-unpacked.
 4. Todos os arquivos sao enviados a um rascunho antes de publicar a release.

@@ -420,10 +420,21 @@ function compareVersions(left, right) {
   return 0;
 }
 
-function fetchJson(url) {
+function fetchJson(url, redirects = 0) {
   return new Promise((resolve, reject) => {
+    if (redirects > 5) return reject(new Error("Redirecionamentos demais no servidor de atualizacao."));
     const client = url.startsWith("https:") ? https : http;
     const request = client.get(url, { timeout: 10000 }, (response) => {
+      if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
+        response.resume();
+        const nextUrl = new URL(response.headers.location, url);
+        if (!["https:", "http:"].includes(nextUrl.protocol) || (url.startsWith("https:") && nextUrl.protocol !== "https:")) {
+          reject(new Error("Redirecionamento de atualizacao inseguro."));
+          return;
+        }
+        fetchJson(nextUrl.toString(), redirects + 1).then(resolve, reject);
+        return;
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         response.resume();
         reject(new Error(`Servidor de atualizacao respondeu ${response.statusCode}.`));
@@ -433,7 +444,9 @@ function fetchJson(url) {
       response.setEncoding("utf8");
       response.on("data", (chunk) => {
         body += chunk;
+        if (body.length > 1_000_000) request.destroy(new Error("Manifesto de atualizacao muito grande."));
       });
+      response.on("error", reject);
       response.on("end", () => {
         try {
           resolve(JSON.parse(body));
@@ -658,7 +671,11 @@ function createApp(options = {}) {
 
   app.get("/api/updates/check", async (req, res) => {
     const currentVersion = String(req.query.currentVersion || packageInfo.version || "0.0.0");
-    const manifest = await loadUpdateManifest(req);
+    let manifest;
+    try { manifest = await loadUpdateManifest(req); }
+    catch (_error) {
+      return res.status(503).json({ error: "Nao foi possivel consultar as atualizacoes. Tente novamente mais tarde." });
+    }
     if (!manifest) {
       res.json({ enabled: false, currentVersion, updateAvailable: false });
       return;

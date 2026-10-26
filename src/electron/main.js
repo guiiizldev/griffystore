@@ -122,7 +122,11 @@ async function createWindow() {
         type: "question", buttons: ["Instalar e reiniciar", "Agora nao"], defaultId: 1, cancelId: 1,
         title: "Atualizacao Griffy Store", message: "Instalar a atualizacao agora?", detail: "O aplicativo sera fechado e reaberto. Os dados da VPS e as configuracoes serao mantidos.",
       })).response === 0,
-      beforeInstall: closeLocalServer,
+      beforeInstall: async () => {
+        const busy = await mainWindow.webContents.executeJavaScript("Boolean((typeof checkoutBusy !== 'undefined' && checkoutBusy) || (typeof cart !== 'undefined' && cart.length))");
+        if (busy) throw new Error("Finalize a venda ou limpe o carrinho antes de instalar.");
+        await closeLocalServer();
+      },
     });
     for (const action of ["check", "download", "install"]) ipcMain.handle(`griffy:updates:${action}`, (event) => {
       if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame || !event.senderFrame.url.startsWith("file:")) throw new Error("Origem de atualizacao nao permitida.");

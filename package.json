@@ -1,6 +1,6 @@
 {
   "name": "griffy-store-desktop",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Sistema desktop da Griffy Store com PDV, estoque, assistencia tecnica e MySQL.",
   "author": "Griffy Store",
   "main": "src/electron/main.js",
@@ -23,7 +23,7 @@
     "test:showcase": "node scripts/test-showcase.js",
     "test:public-startup": "node scripts/test-public-startup.js",
     "test:sale-duplicates": "node scripts/test-sale-duplicates.js",
-    "test:desktop-updates": "node scripts/test-desktop-updates.js",
+    "test:desktop-updates": "node scripts/test-desktop-updates.js && node scripts/test-update-manifest.js",
     "check": "node --check app.js && node --check src/electron/main.js && node --check src/server/api.js && node --check src/server/database.js && node --check src/server/fiscal.js && node --check src/server/schema.js && node --check src/server/public.js && node --check src/server/timeclock-scheduling.js && node --check timeclock/app.js && node --check timeclock/sw.js"
   },
   "dependencies": {

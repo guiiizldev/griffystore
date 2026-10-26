@@ -1394,6 +1394,10 @@ async function installUpdate() {
   if (window.griffyUpdates) {
     try {
       updateInfo = await window.griffyUpdates.download();
+      if (checkoutBusy || cart.length) {
+        alert("Atualizacao baixada. Finalize a venda ou limpe o carrinho antes de instalar.");
+        return;
+      }
       await window.griffyUpdates.install();
     } catch (error) { alert(`Nao foi possivel atualizar: ${error.message}`); }
     return;
