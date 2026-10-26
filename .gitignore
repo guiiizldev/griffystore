@@ -2,6 +2,7 @@ node_modules/
 store-app/node_modules/
 dist/
 dist-scanner-fix/
+dist-duplicate-fix/
 store-app/dist/
 
 .env

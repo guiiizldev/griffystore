@@ -1,9 +1,9 @@
 {
-  "version": "0.2.0",
-  "downloadUrl": "https://github.com/guiiizldev/griffystore/releases/download/v0.2.0/Griffy-Store-Setup-0.2.0.exe",
-  "notes": "Versao inicial do sistema de atualizacao.",
+  "version": "0.2.2",
+  "downloadUrl": "https://github.com/guiiizldev/griffystore/releases/download/v0.2.2/Griffy-Store-Setup-0.2.2.exe",
+  "notes": "Correcao de vendas duplicadas e atualizacao integrada pelo GitHub.",
   "required": false,
-  "publishedAt": "2026-08-04T00:00:00.000Z",
-  "sha256": "",
-  "size": null
+  "publishedAt": "2026-10-26T22:51:28.067Z",
+  "sha256": "efe3222e6ac8b6a99ca8a1595de1186bb8eba7bcd73bf21c3cec21096facd512",
+  "size": 120692173
 }
