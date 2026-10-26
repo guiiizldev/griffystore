@@ -1183,11 +1183,11 @@ function settingsScreen() {
         <div class="card-head" style="margin-top:12px"><h2>Atualizacoes</h2></div>
         <div class="notice-box">
           <strong>Versao instalada: ${appInfo.version || "0.2.0"}</strong>
-          <span>${updateStatusText()}</span>
+          <span class="update-status">${updateStatusText()}</span>
         </div>
         <div class="actions">
           <button class="btn" type="button" onclick="checkForUpdates(false)">Verificar atualizacao</button>
-          ${updateInfo?.updateAvailable ? `<button class="btn primary" type="button" onclick="installUpdate()">Baixar instalador ${updateInfo.latestVersion}</button>` : ""}
+          ${updateInfo?.updateAvailable ? `<button class="btn primary" type="button" onclick="installUpdate()">Atualizar ${updateInfo.latestVersion}</button>` : ""}
         </div>
         ${canDeleteProducts() ? `
           <div class="card-head" style="margin-top:12px"><h2>Zona administrativa</h2></div>
@@ -1357,6 +1357,10 @@ function simpleNoteEnabled() {
 }
 
 function updateStatusText() {
+  if (updateInfo?.phase === "checking") return "Verificando atualizacoes...";
+  if (updateInfo?.phase === "downloading") return `Baixando atualizacao: ${updateInfo.percent || 0}%`;
+  if (updateInfo?.phase === "downloaded") return "Atualizacao pronta para instalar.";
+  if (updateInfo?.phase === "error") return `Falha na atualizacao: ${updateInfo.error || "Tente novamente."}`;
   if (!apiOnline) return "Conecte o sistema ao MySQL/API local para verificar atualizacoes.";
   if (!updateInfo) return "Nenhuma verificacao feita nesta sessao.";
   if (updateInfo.enabled === false) return "Auto update ainda nao configurado. Preencha UPDATE_MANIFEST_URL no arquivo .env.";
@@ -1365,12 +1369,12 @@ function updateStatusText() {
 }
 
 async function checkForUpdates(silent = false) {
-  if (!apiOnline) {
+  if (!apiOnline && !window.griffyUpdates) {
     if (!silent) alert("API local offline. Abra o sistema conectado ao banco para verificar atualizacoes.");
     return;
   }
   try {
-    updateInfo = await api(`/updates/check?currentVersion=${encodeURIComponent(appInfo.version || configuredAppVersion())}`);
+    updateInfo = window.griffyUpdates ? await window.griffyUpdates.check() : await api(`/updates/check?currentVersion=${encodeURIComponent(appInfo.version || configuredAppVersion())}`);
     if (!silent) {
       if (updateInfo.enabled === false) alert("Auto update ainda nao configurado. Preencha UPDATE_MANIFEST_URL no .env.");
       else if (updateInfo.updateAvailable) alert(`Nova versao disponivel: ${updateInfo.latestVersion}`);
@@ -1382,13 +1386,29 @@ async function checkForUpdates(silent = false) {
   }
 }
 
-function installUpdate() {
+async function installUpdate() {
+  if (checkoutBusy || cart.length) {
+    alert("Finalize a venda ou limpe o carrinho antes de atualizar.");
+    return;
+  }
+  if (window.griffyUpdates) {
+    try {
+      updateInfo = await window.griffyUpdates.download();
+      await window.griffyUpdates.install();
+    } catch (error) { alert(`Nao foi possivel atualizar: ${error.message}`); }
+    return;
+  }
   if (!updateInfo?.downloadUrl) {
     alert("Link do instalador nao encontrado no manifesto de atualizacao.");
     return;
   }
   window.open(updateInfo.downloadUrl, "_blank");
 }
+
+if (window.griffyUpdates) window.griffyUpdates.onStatus((status) => {
+  updateInfo = status;
+  document.querySelectorAll(".update-status").forEach((element) => { element.textContent = updateStatusText(); });
+});
 
 function cancelOperatorIds() {
   try {

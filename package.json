@@ -1,6 +1,6 @@
 {
   "name": "griffy-store-desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Sistema desktop da Griffy Store com PDV, estoque, assistencia tecnica e MySQL.",
   "author": "Griffy Store",
   "main": "src/electron/main.js",
@@ -23,10 +23,12 @@
     "test:showcase": "node scripts/test-showcase.js",
     "test:public-startup": "node scripts/test-public-startup.js",
     "test:sale-duplicates": "node scripts/test-sale-duplicates.js",
+    "test:desktop-updates": "node scripts/test-desktop-updates.js",
     "check": "node --check app.js && node --check src/electron/main.js && node --check src/server/api.js && node --check src/server/database.js && node --check src/server/fiscal.js && node --check src/server/schema.js && node --check src/server/public.js && node --check src/server/timeclock-scheduling.js && node --check timeclock/app.js && node --check timeclock/sw.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
+    "electron-updater": "^6.8.11",
     "express": "^4.21.2",
     "mysql2": "^3.11.5",
     "papaparse": "^5.7.0"
@@ -45,7 +47,6 @@
       "index.html",
       "styles.css",
       "app.js",
-      ".env",
       ".env.example",
       "assets/**/*",
       "store/**/*",
@@ -61,6 +62,14 @@
       "target": "nsis",
       "artifactName": "Griffy-Store-Setup-${version}.${ext}"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "guiiizldev",
+        "repo": "griffystore",
+        "releaseType": "release"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

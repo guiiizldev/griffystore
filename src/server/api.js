@@ -450,7 +450,7 @@ function fetchJson(url) {
 }
 
 async function loadUpdateManifest(req) {
-  const manifestUrl = process.env.UPDATE_MANIFEST_URL || "";
+  const manifestUrl = process.env.UPDATE_MANIFEST_URL || "https://github.com/guiiizldev/griffystore/releases/latest/download/latest.json";
   if (manifestUrl) {
     const manifest = await fetchJson(manifestUrl);
     const baseUrl = new URL(manifestUrl);

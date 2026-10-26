@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, shell, ipcMain } = require("electron");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
@@ -7,6 +7,7 @@ const packageInfo = require("../../package.json");
 let mainWindow;
 let server;
 let reusedExistingServer = false;
+let updates;
 
 const gotLock = app.requestSingleInstanceLock();
 
@@ -80,7 +81,7 @@ async function createWindow() {
   ensureConfigFile(configPath);
   applyEnv(readEnvFile(configPath));
 
-  const remoteApiBase = normalizeApiBase(process.env.GRIFFY_API_BASE || process.env.API_BASE_URL || process.env.REMOTE_API_URL);
+  const remoteApiBase = normalizeApiBase(process.env.GRIFFY_API_BASE || process.env.API_BASE_URL || process.env.REMOTE_API_URL || (app.isPackaged ? "https://griffystore.com.br/api" : ""));
   const port = Number(process.env.APP_PORT || 3789);
   if (!remoteApiBase) {
     const { startServer } = require("../server/api");
@@ -107,8 +108,27 @@ async function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
+
+  if (!updates) {
+    const { autoUpdater } = require("electron-updater");
+    const { createUpdates } = require("./updates");
+    updates = createUpdates({
+      updater: autoUpdater, version: app.getVersion(), enabled: app.isPackaged && process.platform === "win32",
+      onStatus: (status) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("griffy:updates:status", status); },
+      confirmInstall: async () => (await dialog.showMessageBox(mainWindow, {
+        type: "question", buttons: ["Instalar e reiniciar", "Agora nao"], defaultId: 1, cancelId: 1,
+        title: "Atualizacao Griffy Store", message: "Instalar a atualizacao agora?", detail: "O aplicativo sera fechado e reaberto. Os dados da VPS e as configuracoes serao mantidos.",
+      })).response === 0,
+      beforeInstall: closeLocalServer,
+    });
+    for (const action of ["check", "download", "install"]) ipcMain.handle(`griffy:updates:${action}`, (event) => {
+      if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame || !event.senderFrame.url.startsWith("file:")) throw new Error("Origem de atualizacao nao permitida.");
+      return updates[action]();
+    });
+  }
 
   await mainWindow.loadFile(path.join(__dirname, "../../index.html"), {
     query: {
