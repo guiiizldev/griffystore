@@ -1449,13 +1449,17 @@ function createApp(options = {}) {
   });
 
   app.post("/api/sales", async (req, res) => {
+    const requestId = req.body.requestId;
+    if (requestId !== undefined && (typeof requestId !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(requestId))) {
+      return res.status(400).json({ error: "Identificador de venda invalido." });
+    }
     const shift = await getOpenShift();
     if (!shift) {
       res.status(409).json({ error: "Abra um turno de caixa antes de finalizar vendas." });
       return;
     }
     const sale = {
-      id: uid("sale"),
+      id: requestId ? `sale${crypto.createHash("sha256").update(requestId).digest("hex").slice(0, 32)}` : uid("sale"),
       date: today(),
       customer: req.body.customer || null,
       payment: req.body.payment || "Pix",
@@ -1475,6 +1479,19 @@ function createApp(options = {}) {
     const connection = await db().getConnection();
     try {
       await connection.beginTransaction();
+      // Serialize checkout requests for this shift before checking their identity.
+      await connection.execute("SELECT id FROM cash_shifts WHERE id = :id FOR UPDATE", { id: shift.id });
+      if (requestId) {
+        const [existing] = await connection.execute("SELECT id, shift_id FROM sales WHERE id = :id", { id: sale.id });
+        if (existing.length) {
+          if (existing[0].shift_id !== shift.id) {
+            await connection.rollback();
+            return res.status(409).json({ error: "Esta venda ja pertence a outro caixa. Atualize o sistema antes de continuar." });
+          }
+          await connection.commit();
+          return res.json({ ...sale, alreadyRecorded: true });
+        }
+      }
       await connection.execute(
         `INSERT INTO sales (id, shift_id, sale_date, customer, payment, operator, seller, discount, total)
          VALUES (:id, :shiftId, :businessDate, :customer, :payment, :operator, :seller, :discount, :total)`,

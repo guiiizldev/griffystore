@@ -167,6 +167,9 @@ let session = JSON.parse(localStorage.getItem("griffy-session") || "null");
 let view = "dashboard";
 let modal = null;
 let cart = [];
+let checkoutBusy = false;
+let checkoutRequest = null;
+let lastCartClick = null;
 let ui = {};
 let paymentRows = [{ method: "Pix", amount: "", details: "", installments: "" }];
 let lastCloseReport = null;
@@ -594,7 +597,7 @@ function posScreen() {
           <h2>Produtos</h2>
           <div class="toolbar">
             <input id="productSearch" placeholder="Buscar produto ou codigo" oninput="setUi('productSearch', this.value)" value="${valueOf("productSearch")}" />
-            <button class="btn primary" onclick="addBySearch()">Adicionar codigo</button>
+            <button class="btn primary" onclick="addBySearch(event)">Adicionar codigo</button>
             <button class="btn" onclick="openModal('product')">Novo item</button>
           </div>
         </div>
@@ -609,7 +612,7 @@ function posScreen() {
                   <div class="product-meta">${p.category} · ${p.stock} un.</div>
                 </div>
                 <strong>${money.format(p.price)}</strong>
-                <button class="btn primary" ${p.stock < 1 ? "disabled" : ""} onclick="addCart('${p.id}')">Adicionar</button>
+                <button class="btn primary" ${p.stock < 1 ? "disabled" : ""} onclick="addCart('${p.id}', event)">Adicionar</button>
               </article>`,
             )
             .join("")}
@@ -636,7 +639,7 @@ function posScreen() {
                       <span>
                         <button class="btn" onclick="decCart('${item.id}')">−</button>
                         <input class="qty-input" type="number" min="1" value="${item.qty}" onchange="setCartQty('${item.id}', this.value)" />
-                        <button class="btn" onclick="addCart('${item.id}')">+</button>
+                        <button class="btn" onclick="addCart('${item.id}', event)">+</button>
                       </span>
                     </div>`,
                   )
@@ -666,7 +669,7 @@ function posScreen() {
           </select>
         </label>
         ${paymentPanelHtml()}
-        <button class="btn primary" onclick="checkout()" ${cart.length && state.cash.open ? "" : "disabled"}>Finalizar venda</button>
+        <button class="btn primary" onclick="checkout()" ${cart.length && state.cash.open && !checkoutBusy ? "" : "disabled"}>${checkoutBusy ? "Salvando venda..." : "Finalizar venda"}</button>
       </aside>
     </div>
   `;
@@ -2696,17 +2699,21 @@ function closeModal(event) {
   }
 }
 
-function addCart(id) {
+function addCart(id, event) {
+  if (checkoutBusy || event?.detail > 1 || event?.repeat) return;
+  if (event && lastCartClick?.id === id && Date.now() - lastCartClick.at < 300) return;
   const product = state.products.find((p) => p.id === id);
   const item = cart.find((x) => x.id === id);
   const currentQty = item ? item.qty : 0;
   if (!product || currentQty >= product.stock) return;
+  if (event) lastCartClick = { id, at: Date.now() };
   if (item) item.qty += 1;
   else cart.push({ id: product.id, name: product.name, price: product.price, qty: 1 });
   render();
 }
 
-function addBySearch() {
+function addBySearch(event) {
+  if (checkoutBusy || event?.detail > 1 || event?.repeat) return;
   const query = valueOf("productSearch").trim().toLowerCase();
   if (!query) return;
   const product =
@@ -2716,7 +2723,7 @@ function addBySearch() {
     alert("Produto nao encontrado.");
     return;
   }
-  addCart(product.id);
+  addCart(product.id, event);
 }
 
 function setCartQty(id, qtyValue) {
@@ -2772,6 +2779,7 @@ function clearCart() {
 }
 
 async function checkout() {
+  if (checkoutBusy || !cart.length) return;
   if (!state.cash.open) {
     alert("Abra um turno de caixa antes de finalizar vendas.");
     return;
@@ -2796,6 +2804,13 @@ async function checkout() {
   };
 
   if (apiOnline) {
+    const fingerprint = JSON.stringify(salePayload);
+    if (!checkoutRequest || checkoutRequest.fingerprint !== fingerprint) {
+      checkoutRequest = { fingerprint, id: crypto.randomUUID() };
+    }
+    salePayload.requestId = checkoutRequest.id;
+    checkoutBusy = true;
+    render();
     try {
       const savedSale = await apiSend("/sales", salePayload);
       const sale = { ...savedSale, items: salePayload.items, payments };
@@ -2809,6 +2824,7 @@ async function checkout() {
         ...(state.cash.movements || []),
       ];
       cart = [];
+      checkoutRequest = null;
       ui.discount = 0;
       paymentRows = [{ method: "Pix", amount: "", details: "", installments: "" }];
       modal = simpleNoteEnabled() ? { type: "receipt", id: savedSale.id } : null;
@@ -2817,6 +2833,9 @@ async function checkout() {
       return;
     } catch (error) {
       alert(error.message);
+    } finally {
+      checkoutBusy = false;
+      render();
     }
     return;
   }
