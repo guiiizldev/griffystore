@@ -1,9 +1,9 @@
 {
-  "version": "0.2.2",
-  "downloadUrl": "https://github.com/guiiizldev/griffystore/releases/download/v0.2.2/Griffy-Store-Setup-0.2.2.exe",
-  "notes": "Correcao de vendas duplicadas e atualizacao integrada pelo GitHub.",
+  "version": "0.2.3",
+  "downloadUrl": "https://github.com/guiiizldev/griffystore/releases/download/v0.2.3/Griffy-Store-Setup-0.2.3.exe",
+  "notes": "Relatorios por dia, fechamento detalhado por turno e historico mensal completo.",
   "required": false,
-  "publishedAt": "2026-10-26T22:51:28.067Z",
-  "sha256": "efe3222e6ac8b6a99ca8a1595de1186bb8eba7bcd73bf21c3cec21096facd512",
-  "size": 120692173
+  "publishedAt": "2026-10-28T16:39:27.137Z",
+  "sha256": "04ff5a2094c40e6dcdc40d708569402f14bb96bb057315212f8f0bb48632c13f",
+  "size": 120694081
 }
