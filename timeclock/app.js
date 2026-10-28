@@ -701,6 +701,14 @@ function entryRow(entry) {
   </div>`;
 }
 
+function locationDetails(entry) {
+  const hasLocation = entry.latitude != null && entry.longitude != null && Number.isFinite(Number(entry.latitude)) && Number.isFinite(Number(entry.longitude));
+  return `${hasLocation ? `<p>Latitude: ${Number(entry.latitude).toFixed(6)}</p><p>Longitude: ${Number(entry.longitude).toFixed(6)}</p>` : `<p>Localizacao indisponivel</p>`}
+    <p>Distancia da referencia: ${entry.distanceMeters == null ? "Indisponivel" : `${entry.distanceMeters} m`}</p>
+    <p>Precisao GPS: ${entry.accuracy == null ? "Indisponivel" : `${Math.round(entry.accuracy)} m`}</p>
+    ${hasLocation ? `<a href="https://www.google.com/maps?q=${Number(entry.latitude)},${Number(entry.longitude)}" target="_blank" rel="noopener noreferrer">Ver localizacao da batida</a>` : ""}`;
+}
+
 function adminView() {
   if (session?.role === "admin" && adminSection === "errors") return errorLogsView();
   const allRows = adminSummary?.summary || [];
@@ -712,7 +720,6 @@ function adminView() {
   const worked = rows.reduce((sum, row) => sum + (row.workedMinutes || 0), 0);
   return `<section class="admin tab-page" aria-busy="${adminLoading}">
     ${session?.role === "admin" ? `<div class="admin-view-tabs"><button class="active" type="button" aria-pressed="true">Funcionarios</button><button class="secondary" type="button" onclick="openErrorLogs()">Logs de erro</button></div>` : ""}
-    ${adminSummary && (!adminSummary.settings?.["timeclock.store_latitude"] || !adminSummary.settings?.["timeclock.store_longitude"]) ? `<div class="notice"><span>Batidas bloqueadas: localizacao da loja nao configurada.</span><button class="icon-button secondary" type="button" title="Configurar local da loja" aria-label="Configurar local da loja" onclick="const local=document.querySelector('.local-settings');local.open=true;local.scrollIntoView({behavior:'smooth'})">${icon("map-pin")}</button></div>` : ""}
     <div class="admin-head">
       <div>
         <h2>Acompanhamento da equipe</h2>
@@ -749,7 +756,7 @@ function adminView() {
         ${rows.length ? rows.map((day) => `<details class="attendance-day"><summary><span>${dayLabel(day.date)}</span>${attendanceBadge(day)}</summary><div class="day-details"><div><span>Entrada prevista</span><strong>${day.expectedStart || "Nao configurada"}</strong></div><div><span>Saida prevista</span><strong>${day.expectedEnd || "Nao configurada"}</strong></div><div><span>Entrada</span><strong>${clock(day.firstIn)}</strong></div><div><span>Saida</span><strong>${clock(day.lastOut)}</strong></div><div><span>Horas apuradas</span><strong>${day.workedMinutes === null ? "Pendente" : duration(day.workedMinutes)}</strong></div><div><span>Marcacoes</span><strong>${day.entries?.length || 0}</strong></div></div>${day.scheduleSource === "swap" ? `<p class="swap-note">Troca de horario aceita</p>` : ""}${day.incomplete ? `<p class="pending">Marcacoes incompletas</p>` : ""}</details>`).join("") : `<div class="empty">Sem marcacoes neste periodo.</div>`}
       </section>
       <section class="attendance-section"><h2>Marcacoes e evidencias</h2><p>${entries.length} registros no periodo</p>
-        ${entries.length ? entries.map((entry) => `<details class="evidence-item" data-entry-id="${escapeHtml(entry.id)}"><summary><span>${escapeHtml(entry.type)}<small>${moneylessDate.format(new Date(entry.at))}</small></span><span class="${entry.locationStatus === "Fora do raio" ? "absence" : "muted"}">${escapeHtml(entry.locationStatus || "Sem local")}</span></summary><div class="evidence-detail"><div class="evidence-photo"><span>Foto</span></div><div><p>Distancia: ${entry.distanceMeters == null ? "Indisponivel" : `${entry.distanceMeters} m`}</p><p>Precisao GPS: ${entry.accuracy == null ? "Indisponivel" : `${Math.round(entry.accuracy)} m`}</p>${entry.latitude != null && entry.longitude != null ? `<a href="https://www.google.com/maps?q=${Number(entry.latitude)},${Number(entry.longitude)}" target="_blank" rel="noopener noreferrer">Ver localizacao</a>` : ""}</div></div></details>`).join("") : `<div class="empty">Sem evidencias neste periodo.</div>`}
+        ${entries.length ? entries.map((entry) => `<details class="evidence-item" data-entry-id="${escapeHtml(entry.id)}"><summary><span>${escapeHtml(entry.type)}<small>${moneylessDate.format(new Date(entry.at))}</small></span><span class="muted">${escapeHtml(entry.locationStatus || "Sem local")}</span></summary><div class="evidence-detail"><div class="evidence-photo"><span>Foto</span></div><div>${locationDetails(entry)}</div></div></details>`).join("") : `<div class="empty">Sem evidencias neste periodo.</div>`}
       </section>
     </div>
     <section class="attendance-section"><h2>Trocas deste funcionario</h2>${(adminSummary?.swaps || []).filter((swap) => swap.requesterId === selectedEmployee || swap.targetId === selectedEmployee).map((swap) => swapCard(swap, false)).join("") || `<div class="empty">Nenhum pedido de troca.</div>`}</section>
@@ -757,10 +764,9 @@ function adminView() {
     <details class="admin-settings local-settings"><summary>Configuracoes de jornada e local</summary>
     <form class="settings-grid" onsubmit="saveTimeSettings(event)">
       <label>Limite de atraso (min)<input name="lateToleranceMinutes" type="number" min="0" max="120" required value="${escapeHtml(adminSummary?.settings?.["timeclock.late_tolerance_minutes"] ?? 10)}" /></label>
-      <label>Latitude<input name="storeLatitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_latitude"] || "")}" placeholder="-22.0000000" /></label>
-      <label>Longitude<input name="storeLongitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_longitude"] || "")}" placeholder="-43.0000000" /></label>
-      <label>Raio permitido em metros<input name="allowedRadiusMeters" type="number" min="1" max="15" required value="${Math.min(15, Number(adminSummary?.settings?.["timeclock.allowed_radius_meters"] || 15))}" /></label>
-      <button type="button" class="secondary" onclick="fillCurrentLocation(this)">${icon("map-pin")} Localizar entrada da loja</button>
+      <label>Latitude de referencia (opcional)<input name="storeLatitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_latitude"] ?? "")}" placeholder="-22.0000000" /></label>
+      <label>Longitude de referencia (opcional)<input name="storeLongitude" value="${escapeHtml(adminSummary?.settings?.["timeclock.store_longitude"] ?? "")}" placeholder="-43.0000000" /></label>
+      <button type="button" class="secondary" onclick="fillCurrentLocation(this)">${icon("map-pin")} Localizar referencia da loja</button>
       <p class="location-feedback muted" aria-live="polite"></p>
       <button type="submit">Salvar configuracoes</button>
     </form>
@@ -775,7 +781,6 @@ async function fillCurrentLocation(button) {
   feedback.textContent = "Buscando GPS...";
   try {
     const position = await getPosition();
-    if (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy > 15 || position.coords.accuracy <= 0) throw new Error("GPS impreciso. Ative a localizacao precisa e tente novamente na entrada da loja.");
     form.elements.storeLatitude.value = position.coords.latitude.toFixed(7);
     form.elements.storeLongitude.value = position.coords.longitude.toFixed(7);
     feedback.textContent = `Precisao GPS: ${Math.round(position.coords.accuracy)} m. Salve as configuracoes para confirmar.`;

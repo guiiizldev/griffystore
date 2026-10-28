@@ -48,7 +48,11 @@ async function integration() {
     assert.equal((await d.query("SELECT COUNT(*) AS total FROM time_clock_entries"))[0].total,1,"Duplicate submission must not create another point");
     assert.equal((await request("a",`/attempts/${second.id}/fail`,{reason:"Network"},200)).status,"accepted");
     const third=await request("a","/attempts",{type:"Entrada"},201);
-    await request("a","/punch",{...evidence,attemptId:third.id,latitude:-22.9},400);
+    const outside=await request("a","/punch",{...evidence,attemptId:third.id,latitude:-22.9,accuracy:500},200);
+    assert.equal(outside.entry.latitude,-22.9);
+    assert.equal(outside.entry.locationStatus,"Localizacao registrada");
+    const invalid=await request("a","/attempts",{type:"Entrada"},201);
+    await request("a","/punch",{...evidence,attemptId:invalid.id,latitude:91},400);
     const month=scheduleToday().slice(0,7);
     await request("manager",`/admin/errors?month=${month}`,null,403);
     await request("a",`/admin/errors?month=${month}`,null,403);

@@ -8,7 +8,7 @@ const { migrate } = require("./schema");
 const { issueFiscalDocument } = require("./fiscal");
 const packageInfo = require("../../package.json");
 const { registerShowcase } = require("./showcase");
-const { coordinate, maxRadius, validateLocation } = require("./timeclock-location");
+const { coordinate, validateLocation } = require("./timeclock-location");
 const { beginAttempt, failAttempt, loadAttempts, registerAttempts } = require("./timeclock-attempts");
 const { scheduleToday, clockParts, entryAtSql, entryBusinessDateSql, regularSchedule, effectiveSchedule, completeAttendance, loadScheduleData, loadSwaps, registerScheduling } = require("./timeclock-scheduling");
 
@@ -1102,17 +1102,15 @@ function createApp(options = {}) {
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) return res.status(400).json({ error: "Horario de entrada invalido." });
     const tolerance = Number(req.body.lateToleranceMinutes ?? 10);
     if (!Number.isInteger(tolerance) || tolerance < 0 || tolerance > 120) return res.status(400).json({ error: "Tolerancia deve ser entre 0 e 120 minutos." });
-    const radius = Number(req.body.allowedRadiusMeters ?? maxRadius);
-    if (!Number.isFinite(radius) || radius < 1 || radius > maxRadius) return res.status(400).json({ error: "O raio deve ser entre 1 e 15 metros." });
     const storeLatitude = coordinate(req.body.storeLatitude, 90);
     const storeLongitude = coordinate(req.body.storeLongitude, 180);
-    if (storeLatitude === null || storeLongitude === null) return res.status(400).json({ error: "Salve a latitude e longitude da entrada da loja." });
+    const hasReference = [req.body.storeLatitude, req.body.storeLongitude].some((value) => value !== undefined && value !== null && String(value).trim() !== "");
+    if (hasReference && (storeLatitude === null || storeLongitude === null)) return res.status(400).json({ error: "Informe latitude e longitude validas para a referencia da loja, ou deixe ambas vazias." });
     const allowed = {
       "timeclock.start_time": startTime,
       "timeclock.late_tolerance_minutes": String(tolerance),
-      "timeclock.store_latitude": String(storeLatitude),
-      "timeclock.store_longitude": String(storeLongitude),
-      "timeclock.allowed_radius_meters": String(radius),
+      "timeclock.store_latitude": storeLatitude === null ? "" : String(storeLatitude),
+      "timeclock.store_longitude": storeLongitude === null ? "" : String(storeLongitude),
     };
     for (const [key, value] of Object.entries(allowed)) {
       await query(
