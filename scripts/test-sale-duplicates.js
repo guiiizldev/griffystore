@@ -15,7 +15,7 @@ async function client() {
     checkoutBusy: false, checkoutRequest: null, lastCartClick: null,
     state: { cash: { open: true, shift: { id: "shift" }, movements: [] }, products: [{ id: "p", stock: 10 }], sales: [] },
     session: { name: "Ana" }, ui: {}, apiOnline: true, paymentRows: [],
-    crypto, structuredClone, render() {}, notify() {}, alert() {},
+    crypto, structuredClone, render() {}, notify() {}, alert() {}, invalidatePeriodReport() {},
     valueOf: () => "", cartTotal: () => 10,
     normalizedPayments: () => [{ method: "Dinheiro", amount: 10 }],
     paymentsLabel: () => "Dinheiro", selectedSellerName: () => "Ana",

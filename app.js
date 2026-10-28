@@ -170,6 +170,8 @@ let cart = [];
 let checkoutBusy = false;
 let checkoutRequest = null;
 let lastCartClick = null;
+let periodReport = { key: "", data: null, loading: false, error: "" };
+let periodReportRequest = 0;
 let ui = {};
 let paymentRows = [{ method: "Pix", amount: "", details: "", installments: "" }];
 let lastCloseReport = null;
@@ -257,6 +259,7 @@ async function boot() {
 async function reloadState() {
   if (!apiOnline) return;
   state = await api("/state");
+  invalidatePeriodReport();
 }
 
 function setSession(user) {
@@ -1219,8 +1222,8 @@ function backupScreen() {
 }
 
 function shiftSales() {
-  if (!state.cash.shift?.id) return state.sales.filter((sale) => sale.status !== "canceled");
-  return state.sales.filter((sale) => sale.status !== "canceled" && (!sale.shiftId || sale.shiftId === state.cash.shift.id));
+  if (!state.cash.shift?.id) return [];
+  return salesForShift(state.cash.shift, state.sales);
 }
 
 function daySales(date = state.cash.shift?.businessDate || businessDate()) {
@@ -1487,25 +1490,29 @@ function monthLabel(month = reportMonth()) {
 }
 
 function salesForMonth(month = reportMonth()) {
-  return state.sales.filter((sale) => sale.status !== "canceled" && String(sale.date || "").slice(0, 7) === month);
+  const sales = periodReport.key === `month:${month}` && periodReport.data ? periodReport.data.sales : state.sales;
+  return sales.filter((sale) => sale.status !== "canceled" && String(sale.date || "").slice(0, 7) === month);
 }
 
 function closedCashShifts(month = reportMonth()) {
-  return (state.cash.shifts || [])
+  const shifts = periodReport.key === `month:${month}` && periodReport.data ? periodReport.data.shifts : state.cash.shifts || [];
+  return shifts
     .filter((shift) => shift.status === "closed")
     .filter((shift) => !month || String(shift.businessDate || shift.closedAt || "").slice(0, 7) === month);
 }
 
 function cashMovementsForShift(shift) {
+  if (periodReport.data?.shifts.some((item) => item.id === shift?.id)) return periodReport.data.movements.filter((movement) => movement.shiftId === shift.id);
   const history = state.cash.historyMovements || [];
   if (shift?.id && history.length) return history.filter((movement) => movement.shift_id === shift.id || movement.shiftId === shift.id);
   if (state.cash.shift?.id && shift?.id === state.cash.shift.id) return state.cash.movements || [];
   return [];
 }
 
-function salesForShift(shift) {
+function salesForShift(shift, source) {
   if (!shift) return [];
-  return state.sales.filter((sale) => {
+  const sales = source || (periodReport.data?.shifts.some((item) => item.id === shift.id) ? periodReport.data.sales : state.sales);
+  return sales.filter((sale) => {
     if (sale.status === "canceled") return false;
     if (shift.id && sale.shiftId) return sale.shiftId === shift.id;
     return String(sale.date || "").slice(0, 10) === String(shift.businessDate || "").slice(0, 10);
@@ -1582,7 +1589,7 @@ function closedShiftsTable(shifts) {
   </table></div>`;
 }
 
-function reportsScreen() {
+function reportsScreenLegacy() {
   return `
     <div class="grid panel-grid">
       <section class="card">
@@ -1623,7 +1630,70 @@ function reportsScreen() {
   `;
 }
 
+function reportViewTabs(selected) {
+  return `<div class="report-view-tabs" role="group" aria-label="Periodo do relatorio"><button type="button" class="btn ${selected === "day" ? "primary" : ""}" aria-pressed="${selected === "day"}" onclick="setUi('reportView','day')">Por dia</button><button type="button" class="btn ${selected === "month" ? "primary" : ""}" aria-pressed="${selected === "month"}" onclick="setUi('reportView','month')">Mensal</button></div>`;
+}
+
+function invalidatePeriodReport() {
+  periodReportRequest++;
+  periodReport = { key: "", data: null, loading: false, error: "" };
+}
+
+async function loadPeriodReport(type, period) {
+  const request = ++periodReportRequest;
+  periodReport = { key: `${type}:${period}`, data: null, loading: true, error: "" };
+  try {
+    const data = await api(`/reports/period?type=${encodeURIComponent(type)}&period=${encodeURIComponent(period)}`);
+    if (!Array.isArray(data.sales) || !Array.isArray(data.shifts) || !Array.isArray(data.movements)) throw new Error("Atualize a API da VPS para consultar este relatorio.");
+    if (request !== periodReportRequest) return;
+    periodReport.data = data;
+  } catch (error) {
+    if (request !== periodReportRequest) return;
+    periodReport.error = error.message;
+  }
+  if (request !== periodReportRequest) return;
+  periodReport.loading = false;
+  if (view === "reports" && !modal) render();
+}
+
+function reportEscape(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
+}
+
+function reportSalesDetails(sales) {
+  if (!sales.length) return '<div class="empty">Nenhuma venda neste dia.</div>';
+  return sales.map((sale) => `<details class="report-sale"><summary><span><strong>${reportEscape(sale.customer || "Consumidor final")}</strong><small>${sale.createdAt ? formatDateTime(sale.createdAt) : reportEscape(sale.date)} - ${reportEscape(sale.seller || sale.operator || "-")}</small></span><span>${money.format(sale.total)} <small>${sale.status === "canceled" ? "Cancelada" : "Ativa"}</small></span></summary><div class="report-sale-body">
+    <p>Venda: ${reportEscape(sale.id)} | Operador: ${reportEscape(sale.operator || "-")}</p>
+    <div class="table-wrap"><table><thead><tr><th>Produto</th><th>Quantidade</th><th>Unitario</th><th>Subtotal</th></tr></thead><tbody>${(sale.items || []).map((item) => `<tr><td>${reportEscape(item.name)}</td><td>${Number(item.qty)}</td><td>${money.format(item.price)}</td><td>${money.format(Number(item.qty) * Number(item.price))}</td></tr>`).join("")}</tbody></table></div>
+    <div class="totals"><div><span>Desconto</span><strong>${money.format(sale.discount || 0)}</strong></div>${salePayments(sale).map((payment) => `<div><span>${reportEscape(payment.method)}</span><strong>${money.format(payment.amount)}</strong></div>`).join("")}<div><span>Troco</span><strong>${money.format(saleChange(sale))}</strong></div><div><span>Total da venda</span><strong>${money.format(sale.total)}</strong></div></div>
+    ${sale.status === "canceled" ? `<p>Cancelamento: ${reportEscape(sale.cancelReason || "Sem motivo informado")}</p>` : ""}</div></details>`).join("");
+}
+
+function reportMovementTable(movements) {
+  const manual = movements.filter((movement) => !isSaleMovement(movement) && !isCancellationMovement(movement));
+  if (!manual.length) return '<div class="empty">Nenhuma sangria ou reforco neste periodo.</div>';
+  return `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Movimento</th><th>Descricao</th><th>Operador</th><th>Valor</th></tr></thead><tbody>${manual.map((movement) => `<tr><td>${reportEscape(String(movement.date || "").slice(0, 10))}</td><td>${movement.type === "Entrada" ? "Reforco" : "Sangria"}</td><td>${reportEscape(movement.description)}</td><td>${reportEscape(movement.operator || "-")}</td><td>${money.format(movement.amount)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
 function reportsScreen() {
+  const type = valueOf("reportView") === "month" ? "month" : "day";
+  const period = type === "month" ? reportMonth() : valueOf("reportDate") || businessDate();
+  if (apiOnline && periodReport.key !== `${type}:${period}`) void loadPeriodReport(type, period);
+  if (apiOnline && !periodReport.data) return `<section class="card"><div class="card-head"><h2>${type === "day" ? "Relatorio do dia" : "Relatorio mensal"}</h2>${reportViewTabs(type)}</div><label>Periodo<input type="${type === "day" ? "date" : "month"}" value="${reportEscape(period)}" onchange="setUi('${type === "day" ? "reportDate" : "reportMonth"}',this.value)" /></label><div class="empty" role="status">${periodReport.loading ? "Carregando vendas e fechamentos do periodo..." : reportEscape(periodReport.error)}</div>${periodReport.error ? `<button type="button" class="btn" onclick="invalidatePeriodReport();render()">Tentar novamente</button>` : ""}</section>`;
+  if (type === "month") return monthlyReportsScreen();
+  const data = apiOnline ? periodReport.data : { sales: state.sales.filter((sale) => sale.date === period), shifts: (state.cash.shifts || []).filter((shift) => shift.businessDate === period), movements: (state.cash.historyMovements || state.cash.movements || []).filter((movement) => String(movement.date || "").slice(0, 10) === period) };
+  const sales = data.sales.filter((sale) => sale.status !== "canceled");
+  const closed = data.shifts.filter((shift) => shift.status === "closed");
+  const canClose = state.cash.open && state.cash.shift?.businessDate === period;
+  return `<section class="card report-hero"><div class="card-head"><h2>Vendas e caixa do dia</h2><div class="toolbar"><input type="date" id="reportDate" aria-label="Dia do relatorio" value="${period}" onchange="setUi('reportDate',this.value)" />${reportViewTabs("day")}<button class="btn" type="button" onclick="invalidatePeriodReport();render()">Atualizar</button><button class="btn" type="button" onclick="window.print()">Imprimir</button></div></div>
+    <div class="grid metrics document-metrics">${metric("Vendas do dia", money.format(sales.reduce((sum, sale) => sum + Number(sale.total), 0)), `${sales.length} atendimento(s)`)}${metric("Descontos", money.format(sales.reduce((sum, sale) => sum + Number(sale.discount || 0), 0)), "somente vendas ativas")}${metric("Canceladas", data.sales.length - sales.length, "fora do total vendido")}${metric("Caixas fechados", closed.length, "somente neste dia")}</div></section>
+    <div class="grid panel-grid report-grid"><section class="card"><h2>Vendas de ${period.split("-").reverse().join("/")}</h2>${reportSalesDetails(data.sales)}<h3 class="subhead">Sangrias e reforcos do dia</h3>${reportMovementTable(data.movements)}</section>
+    <aside class="card"><h2>Pagamentos do dia</h2>${paymentSummaryCards(sales)}<div class="totals"><div><span>Troco devolvido</span><strong>${money.format(sales.reduce((sum, sale) => sum + saleChange(sale), 0))}</strong></div><div><span>Sangrias</span><strong>${money.format(data.movements.filter((movement) => isCashOut(movement) && !isSaleMovement(movement) && !isCancellationMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount), 0))}</strong></div><div><span>Reforcos</span><strong>${money.format(data.movements.filter((movement) => movement.type === "Entrada" && !isSaleMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount), 0))}</strong></div></div>
+    ${canClose ? `<button class="btn danger" type="button" onclick="openModal('closeShift')">Fechar caixa deste dia</button>` : state.cash.open ? `<p>Caixa aberto em ${reportEscape(state.cash.shift.businessDate)}.</p><button class="btn" type="button" onclick="setUi('reportDate','${state.cash.shift.businessDate}')">Ver dia do caixa aberto</button>` : '<p>Sem caixa aberto.</p>'}</aside></div>
+    <section class="card report-current-cash"><h2>Fechamentos de ${period.split("-").reverse().join("/")}</h2>${closedShiftsTable(closed)}</section>`;
+}
+
+function monthlyReportsScreen() {
   const month = reportMonth();
   const sales = salesForMonth(month);
   const shifts = closedCashShifts(month);
@@ -1640,6 +1710,7 @@ function reportsScreen() {
         </div>
         <div class="toolbar">
           <input id="reportMonth" type="month" value="${month}" onchange="setUi('reportMonth', this.value)" />
+          ${reportViewTabs("month")}
           <button class="btn" onclick="exportMonthlyReport()">Exportar relatorio</button>
           <button class="btn" onclick="window.print()">Imprimir</button>
         </div>
@@ -1872,7 +1943,7 @@ function repairPartMovementForm() {
 }
 
 function receiptForm() {
-  const sale = state.sales.find((s) => s.id === modal.id);
+  const sale = [...(periodReport.data?.sales || []), ...state.sales].find((s) => s.id === modal.id);
   if (!sale) return '<div class="empty">Venda nao encontrada.</div>';
   const subtotal = sale.items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.price || 0), 0);
   const payments = salePayments(sale);
@@ -1949,7 +2020,7 @@ function cashCloseReportForm() {
 }
 
 function cashHistoryReportForm() {
-  const shift = (state.cash.shifts || []).find((item) => item.id === modal.id);
+  const shift = [...(periodReport.data?.shifts || []), ...(state.cash.shifts || [])].find((item) => item.id === modal.id);
   if (!shift) return '<div class="empty">Caixa fechado nao encontrado.</div>';
   const report = cashReportFromShift(shift);
   return `
@@ -2469,6 +2540,10 @@ function closeShiftForm() {
     ${isAfterClosingTime() ? '<div class="notice-box"><strong>Fim do expediente</strong><span>Fechamento recomendado apos as 21:00.</span></div>' : ""}
     <h3 class="subhead">Resumo por pagamento</h3>
     ${paymentSummaryHtml()}
+    <h3 class="subhead">Vendas deste caixa (${shiftSales().length})</h3>
+    ${reportSalesDetails(shiftSales())}
+    <h3 class="subhead">Sangrias e reforcos deste caixa</h3>
+    ${reportMovementTable(state.cash.movements || [])}
     <label>Valor contado no caixa<input name="closingAmount" type="number" min="0" step="0.01" value="${expectedCash.toFixed(2)}" required /></label>
     <label>Observacao<textarea name="notes" placeholder="Opcional"></textarea></label>`);
 }
@@ -2710,7 +2785,17 @@ function go(next) {
   render();
 }
 
-function openModal(type, id = null) {
+async function openModal(type, id = null) {
+  if (type === "closeShift" && apiOnline) {
+    try {
+      await reloadState();
+      if (!state.cash.open) { alert("Este caixa ja foi fechado. Atualize os relatorios para consultar o fechamento."); return; }
+      const data = await api(`/reports/period?type=day&period=${encodeURIComponent(state.cash.shift.businessDate)}`);
+      const sales = new Map(state.sales.map((sale) => [sale.id, sale]));
+      for (const sale of data.sales) sales.set(sale.id, sale);
+      state.sales = [...sales.values()];
+    } catch (error) { alert(`Nao foi possivel atualizar os dados para o fechamento: ${error.message}`); return; }
+  }
   modal = { type, id };
   render();
   setTimeout(() => document.querySelector(".modal input, .modal select, .modal textarea")?.focus(), 0);
@@ -2837,6 +2922,7 @@ async function checkout() {
     render();
     try {
       const savedSale = await apiSend("/sales", salePayload);
+      invalidatePeriodReport();
       const sale = { ...savedSale, items: salePayload.items, payments };
       state.sales = [sale, ...(state.sales || [])];
       state.products = (state.products || []).map((product) => {
@@ -3272,6 +3358,7 @@ async function closeShift(event) {
   if (apiOnline) {
     try {
       const result = await apiSend("/cash/close", data);
+      invalidatePeriodReport();
       lastCloseReport = { ...report, ...result, closedAt: new Date().toISOString() };
       const closedShift = {
         ...(state.cash.shift || {}),

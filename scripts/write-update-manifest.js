@@ -14,7 +14,7 @@ input.on("end", () => {
   const manifest = {
     version,
     downloadUrl: `https://github.com/guiiizldev/griffystore/releases/download/v${version}/${filename}`,
-    notes: "Correcao de vendas duplicadas e atualizacao integrada pelo GitHub.",
+    notes: process.env.RELEASE_NOTES || "Relatorios por dia, fechamento detalhado por turno e historico mensal completo.",
     required: false, publishedAt: new Date().toISOString(),
     sha256: hash.digest("hex"), size: fs.statSync(installer).size,
   };

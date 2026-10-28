@@ -8,6 +8,7 @@ const { migrate } = require("./schema");
 const { issueFiscalDocument } = require("./fiscal");
 const packageInfo = require("../../package.json");
 const { registerShowcase } = require("./showcase");
+const { registerSalesReports } = require("./sales-reports");
 const { coordinate, validateLocation } = require("./timeclock-location");
 const { beginAttempt, failAttempt, loadAttempts, registerAttempts } = require("./timeclock-attempts");
 const { scheduleToday, clockParts, entryAtSql, entryBusinessDateSql, regularSchedule, effectiveSchedule, completeAttendance, loadScheduleData, loadSwaps, registerScheduling } = require("./timeclock-scheduling");
@@ -203,6 +204,7 @@ function mapSale(row) {
   return {
     id: row.id,
     date: formatDate(row.sale_date),
+    createdAt: row.created_at,
     customer: row.customer,
     payment: row.payment,
     operator: row.operator,
@@ -660,6 +662,8 @@ function createApp(options = {}) {
   app.get("/api/health", async (_req, res) => {
     res.json({ ok: true });
   });
+
+  registerSalesReports(app, { query, mapSale, mapShift });
 
   app.get("/api/version", async (_req, res) => {
     res.json({

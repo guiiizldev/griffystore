@@ -803,6 +803,14 @@ th {
   align-items: start;
 }
 
+.report-view-tabs { display: inline-flex; gap: 4px; }
+.report-sale { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.report-sale > summary { display: flex; justify-content: space-between; align-items: center; gap: 16px; cursor: pointer; }
+.report-sale > summary span { min-width: 0; overflow-wrap: anywhere; }
+.report-sale small { display: block; color: var(--muted); margin-top: 5px; }
+.report-sale-body { padding-top: 12px; overflow-wrap: anywhere; }
+.report-sale-body .totals { margin-top: 12px; }
+
 .report-current-cash {
   margin-top: 16px;
 }

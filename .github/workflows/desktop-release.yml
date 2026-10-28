@@ -17,6 +17,7 @@ jobs:
       - run: npm ci --prefix store-app
       - run: npm run check
       - run: npm run test:sale-duplicates
+      - run: npm run test:sales-reports
       - run: npm run test:desktop-updates
       - run: npm run build --prefix store-app
       - name: Build installer and unpacked app
@@ -36,6 +37,6 @@ jobs:
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag and package version differ" }
-          gh release create "${{ github.ref_name }}" --draft --title "Griffy Store $version" --notes "Correcao de duplicacoes no caixa e atualizacao integrada. Instale esta versao uma vez para habilitar as proximas atualizacoes pelo aplicativo."
+          gh release create "${{ github.ref_name }}" --draft --title "Griffy Store $version" --generate-notes --notes "Melhorias e correcoes do sistema Griffy Store. Atualizacao disponivel pelo aplicativo."
           gh release upload "${{ github.ref_name }}" dist/*.exe dist/*.blockmap dist/latest.yml dist/latest.json dist/*.zip
           gh release edit "${{ github.ref_name }}" --draft=false --latest
