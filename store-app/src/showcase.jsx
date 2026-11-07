@@ -35,6 +35,7 @@ const columns = [
   "image",
   "notes",
   "battery",
+  "previousPrice",
 ];
 const blank = () => ({
   model: "",
@@ -42,6 +43,7 @@ const blank = () => ({
   color: "",
   condition: "",
   price: "",
+  previousPrice: "",
   quantity: 1,
   image: "",
   notes: "",
@@ -131,6 +133,7 @@ function DeviceDetails({ device, config, close }) {
         <div className="device-detail-copy">
           <span className="device-condition">{device.condition}</span>
           <h2 id="device-title">{device.model}</h2>
+          {device.previousPrice > device.price ? <del className="device-previous-price">De {money.format(device.previousPrice)}</del> : null}
           <p className="device-detail-price">{money.format(device.price)}</p>
           <dl>
             {[
@@ -342,6 +345,7 @@ export function DeviceShowcase({ config }) {
                     {device.storage} <span>/</span>{" "}
                     {device.color || "Cores sob consulta"}
                   </p>
+                  <div className="device-previous-price">{device.previousPrice > device.price ? <del>De {money.format(device.previousPrice)}</del> : null}</div>
                   <strong className="device-price">
                     {money.format(device.price)}
                   </strong>
@@ -410,6 +414,7 @@ export function ShowcaseAdmin({ token }) {
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [checked, setChecked] = useState(false);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   async function load(includeDraft = false) {
     try {
       setDevices(await api("/admin/devices", token));
@@ -485,12 +490,13 @@ export function ShowcaseAdmin({ token }) {
     try {
       const result = await api("/admin/devices/publish", token, {
         method: "POST",
-        body: JSON.stringify({ devices: rows.map((row) => row.input) }),
+        body: JSON.stringify({ devices: rows.map((row) => row.input), replaceExisting }),
       });
       setStatus(`${result.count} aparelhos publicados na vitrine.`);
       setRows([]);
       setText("");
       setChecked(false);
+      setReplaceExisting(false);
       await load();
     } catch (e) {
       setStatus(e.message);
@@ -658,6 +664,10 @@ export function ShowcaseAdmin({ token }) {
               </select>
             </label>
             <label className="review-confirm">
+              <input type="checkbox" checked={replaceExisting} disabled={busy} onChange={(event) => setReplaceExisting(event.target.checked)} />
+              Substituir toda a vitrine atual por esta lista
+            </label>
+            <label className="review-confirm">
               <input
                 type="checkbox"
                 checked={rows.every((row) => !row.needsReview || row.reviewed)}
@@ -697,6 +707,7 @@ export function ShowcaseAdmin({ token }) {
                   ["storage", "Memoria"],
                   ["color", "Cor"],
                   ["price", "Preco (R$)"],
+                  ["previousPrice", "Preco anterior (De) - opcional"],
                   ["quantity", "Quantidade"],
                   ["battery", "Bateria (%) - opcional"],
                 ].map(([field, label]) => (
@@ -705,7 +716,7 @@ export function ShowcaseAdmin({ token }) {
                     <input
                       value={row.input[field] ?? ""}
                       type={field === "quantity" ? "number" : "text"}
-                      inputMode={field === "price" ? "decimal" : undefined}
+                      inputMode={["price", "previousPrice"].includes(field) ? "decimal" : undefined}
                       min={field === "quantity" ? "0" : undefined}
                       onChange={(e) => update(index, field, e.target.value)}
                       disabled={

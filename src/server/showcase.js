@@ -1,6 +1,7 @@
 const Papa = require("papaparse");
 const crypto = require("node:crypto");
 const models = require("../../store/device-models.json");
+const { offerList } = require("./showcase-offers");
 const normalize = (value) =>
   String(value || "")
     .normalize("NFD")
@@ -17,6 +18,7 @@ const fields = [
   "image",
   "notes",
   "battery",
+  "previousPrice",
 ];
 const aliases = {
   modelo: "model",
@@ -45,6 +47,8 @@ const aliases = {
   bateria: "battery",
   saudebateria: "battery",
   battery: "battery",
+  precoanterior: "previousPrice",
+  previousprice: "previousPrice",
 };
 function safeImage(value) {
   if (!value) return "";
@@ -103,6 +107,8 @@ function validateDevice(input) {
     input.quantity === "" || input.quantity === undefined
       ? 1
       : Number(input.quantity);
+  const previousPrice = input.previousPrice === "" || input.previousPrice === undefined || input.previousPrice === null ? null : money(input.previousPrice);
+  if (previousPrice !== null && (!Number.isFinite(previousPrice) || previousPrice <= price || previousPrice > 999999)) throw new Error("O preco anterior deve ser maior que o preco de venda, ou ficar vazio.");
   if (!Number.isInteger(quantity) || quantity < 0 || quantity > 9999)
     throw new Error("Quantidade deve ser um inteiro entre 0 e 9999.");
   const color = String(input.color || "").trim();
@@ -136,6 +142,7 @@ function validateDevice(input) {
     color,
     condition,
     price: Math.round(price * 100) / 100,
+    previousPrice: previousPrice === null ? null : Math.round(previousPrice * 100) / 100,
     quantity,
     image: image || match?.image || "",
     imageKind:
@@ -298,6 +305,17 @@ function chatList(text) {
 function parseList(text) {
   if (typeof text !== "string" || !text.trim() || text.length > 200000)
     throw new Error("Cole uma lista de ate 200 mil caracteres.");
+  if (!/[;\t|]/.test(text) && /(?:^|\n)\s*de\s*:/i.test(text)) {
+    const seen = new Set();
+    return offerList(text).map(row => {
+      try {
+        const device = validateDevice(row.input);
+        if (seen.has(device.key)) throw new Error("Aparelho repetido nesta lista. Confira cor, condicao e quantidade.");
+        seen.add(device.key);
+        return { ...row, device, error: "", warning: row.warning + (device.imageKind === "missing" ? " Modelo sem foto automatica: confira o nome e adicione uma foto." : "") };
+      } catch (error) { return { ...row, device: null, error: error.message }; }
+    });
+  }
   if (!/[;\t|]/.test(text) && /(?:^|\n)\s*iphone\s+\d+/i.test(text))
     return chatList(text);
   const parsed = Papa.parse(text.replace(/^\uFEFF/, ""), {
@@ -357,6 +375,7 @@ function mapDevice(row) {
     color: row.color,
     condition: row.device_condition,
     price: Number(row.price),
+    previousPrice: row.previous_price == null ? null : Number(row.previous_price),
     quantity: Number(row.quantity),
     image: row.image || "",
     imageKind: row.image_kind,
@@ -451,6 +470,7 @@ function registerShowcase(app, { query, db, requireRoleToken }) {
       if (!(await admin(req, res))) return;
       let devices;
       try {
+        if (req.body.replaceExisting !== undefined && typeof req.body.replaceExisting !== "boolean") throw new Error("Informe se deseja substituir a vitrine atual.");
         if (
           !Array.isArray(req.body.devices) ||
           !req.body.devices.length ||
@@ -466,16 +486,16 @@ function registerShowcase(app, { query, db, requireRoleToken }) {
       const connection = await db().getConnection();
       try {
         await connection.beginTransaction();
-        // Serializes list publication while keeping existing listings absent from the list untouched.
+        // Serialize publications across administrators before replacing visible offers.
         await connection.execute(
-          "SELECT id FROM users WHERE id=:id FOR UPDATE",
-          { id: requireRoleToken(req).id },
+          "SELECT id FROM users WHERE role='admin' ORDER BY id FOR UPDATE",
         );
+        if (req.body.replaceExisting) await connection.execute("UPDATE storefront_devices SET active=0");
         for (const device of devices) {
           await connection.execute(
-            `INSERT INTO storefront_devices (id,model,brand,storage,color,device_condition,price,quantity,image,image_kind,notes,battery,active)
-          VALUES (:key,:model,:brand,:storage,:color,:condition,:price,:quantity,:image,:imageKind,:notes,:battery,1)
-          ON DUPLICATE KEY UPDATE price=VALUES(price),quantity=VALUES(quantity),image=VALUES(image),image_kind=VALUES(image_kind),notes=VALUES(notes),battery=VALUES(battery),active=1,updated_at=CURRENT_TIMESTAMP`,
+            `INSERT INTO storefront_devices (id,model,brand,storage,color,device_condition,price,previous_price,quantity,image,image_kind,notes,battery,active)
+          VALUES (:key,:model,:brand,:storage,:color,:condition,:price,:previousPrice,:quantity,:image,:imageKind,:notes,:battery,1)
+          ON DUPLICATE KEY UPDATE price=VALUES(price),previous_price=VALUES(previous_price),quantity=VALUES(quantity),image=VALUES(image),image_kind=VALUES(image_kind),notes=VALUES(notes),battery=VALUES(battery),active=1,updated_at=CURRENT_TIMESTAMP`,
             device,
           );
         }

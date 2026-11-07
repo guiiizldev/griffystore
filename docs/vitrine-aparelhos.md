@@ -9,6 +9,24 @@ Nao ha cobranca nem reserva automatica nesta vitrine.
 
 ## Administracao
 
+O padrao promocional tambem aceita titulos SEMINOVOS/LACRADOS, nomes sem
+o prefixo iPhone, abreviacao PM (Pro Max), memoria sem GB e marcacao do WhatsApp.
+`De: 7499,90` e o preco anterior; o preco abaixo do modelo e o valor de venda.
+Cores consecutivas usam o preco seguinte, e uma nova linha De dentro do mesmo
+modelo altera apenas o preco anterior dos proximos grupos de cores.
+O preco anterior e opcional e aparece riscado quando maior que o preco de venda.
+
+Observacoes sobre SIM, origem, CPO e garantia sao preservadas. Varias baterias
+sem associacao a uma unidade ficam nas observacoes, sem inventar quantidade
+nem escolher uma porcentagem unica. Os valores `2397,900` e `1979,0` sao
+normalizados com aviso; casas excedentes nao nulas exigem correcao manual.
+Modelos sem foto cadastrada nao usam a foto de outro modelo.
+
+Na revisao, Substituir toda a vitrine atual por esta lista oculta os anuncios
+anteriores e publica a nova selecao em uma unica transacao. O historico nao e
+apagado; produtos e pecas do sistema nao sao afetados. Sem essa opcao marcada,
+os anuncios ausentes da importacao permanecem como antes.
+
 Entre diretamente em `/admin` e abra Vitrine de aparelhos. Nao ha botao nem
 link publico para o painel; a autenticacao de administrador continua obrigatoria.
 Cole a lista do WhatsApp ou

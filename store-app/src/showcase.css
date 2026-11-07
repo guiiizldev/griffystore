@@ -31,6 +31,13 @@
   color: #c1c3c6;
   font-size: 12px;
 }
+.device-previous-price {
+  display: block;
+  color: #a9abb0;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 20px;
+}
 .showcase-bulk-review {
   display: grid;
   gap: 16px;

@@ -20,7 +20,7 @@
     "import:stock": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/import-stock-xlsx.ps1",
     "cleanup:categories": "node scripts/cleanup-categories.js",
     "test:timeclock": "node scripts/test-timeclock-summary.js && node scripts/test-timeclock-scheduling.js && node scripts/test-timeclock-swap-selection.js && node scripts/test-timeclock-location.js && node scripts/test-timeclock-attempts.js",
-    "test:showcase": "node scripts/test-showcase.js",
+    "test:showcase": "node scripts/test-showcase.js && node scripts/test-showcase-offers.js",
     "test:public-startup": "node scripts/test-public-startup.js",
     "test:sale-duplicates": "node scripts/test-sale-duplicates.js",
     "test:sales-reports": "node scripts/test-sales-reports.js",

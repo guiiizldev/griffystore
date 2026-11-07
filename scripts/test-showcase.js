@@ -98,7 +98,9 @@ async function integration() {
   const express = require("express");
   const { statements } = require("../src/server/schema");
   const database = `griffy_showcase_test_${Date.now()}`;
+  const socket = process.env.SHOWCASE_TEST_SOCKET;
   const root = await mysql.createConnection({
+    ...(socket ? { socketPath: socket } : {}),
     host: "127.0.0.1",
     port: 3306,
     user: "root",
@@ -108,6 +110,7 @@ async function integration() {
   try {
     await root.query(`CREATE DATABASE \`${database}\``);
     pool = mysql.createPool({
+      ...(socket ? { socketPath: socket } : {}),
       host: "127.0.0.1",
       user: "root",
       password: "",
@@ -218,6 +221,15 @@ async function integration() {
       "Out-of-stock devices are hidden",
     );
     assert.equal((await request("/admin/devices", "a")).length, 1);
+    await request("/admin/devices/publish", "a", "POST", { devices: [{ ...sample, color: "Azul", previousPrice: 3000 }] });
+    await request("/admin/devices/publish", "a", "POST", { replaceExisting: true, devices: [{ ...sample, price: 0 }] }, 400);
+    assert.equal((await request("/devices")).length, 1, "Invalid replacement must preserve the live catalog");
+    await request("/admin/devices/publish", "a", "POST", { replaceExisting: true, devices: [{ ...sample, model: "iPhone 14", previousPrice: 3500 }] });
+    const replacement = await request("/devices");
+    assert.equal(replacement.length, 1);
+    assert.equal(replacement[0].model, "iPhone 14");
+    assert.equal(replacement[0].previousPrice, 3500);
+    assert.equal((await request("/admin/devices", "a")).length, 3, "Replaced listings are archived, not deleted");
     console.log(
       "MySQL/API showcase: administrator-only publication, idempotency, validation, visibility and zero-stock filtering passed.",
     );

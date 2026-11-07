@@ -37,6 +37,7 @@ const statements = [
     color VARCHAR(60) NOT NULL,
     device_condition VARCHAR(20) NOT NULL,
     price DECIMAL(12,2) NOT NULL,
+    previous_price DECIMAL(12,2) NULL,
     quantity INT NOT NULL DEFAULT 0,
     image TEXT NULL,
     image_kind VARCHAR(20) NOT NULL DEFAULT 'missing',
@@ -400,6 +401,7 @@ const allPermissionModules = [
 async function migrate() {
   const connection = db();
   for (const sql of statements) await connection.query(sql);
+  await ensureColumn(connection, "storefront_devices", "previous_price", "DECIMAL(12,2) NULL");
   await connection.query("ALTER TABLE users MODIFY role ENUM('admin','gerente','caixa','vendedor','tecnico') NOT NULL");
   await connection.query("ALTER TABLE role_permissions MODIFY role_name ENUM('gerente','caixa','vendedor','tecnico') NOT NULL");
   await ensureColumn(connection, "sales", "shift_id", "VARCHAR(40) NULL");
