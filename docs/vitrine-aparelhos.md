@@ -60,7 +60,7 @@ para outra variante, cadastre novo anuncio e oculte o antigo.
 ## Imagens e dados
 
 Correspondencia exata de modelo, sem inventar especificacoes tecnicas.
-O catalogo inicial cobre 22 modelos de iPhone; os arquivos ficam na VPS.
+O catalogo cobre 28 modelos de iPhone; os arquivos ficam na VPS.
 Fotos oficiais de referencia podem mostrar todas as cores e sao identificadas
 como ilustrativas. Uma foto HTTPS fornecida pela loja substitui a referencia.
 Modelos desconhecidos nao recebem foto de outro aparelho.

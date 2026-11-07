@@ -1,6 +1,15 @@
 const assert = require("node:assert/strict");
 const { parseList, validateDevice } = require("../src/server/showcase");
 const { offerMoney, offerModel } = require("../src/server/showcase-offers");
+const fs = require("node:fs");
+const path = require("node:path");
+for (const model of ["iPhone 16e", "iPhone 17e", "iPhone Air", "iPhone 18 Pro", "iPhone 18 Pro Max", "iPhone Duo"]) {
+  const device = validateDevice({ model, storage: "256GB", condition: "Lacrado", price: 5000 });
+  assert.equal(device.imageKind, "reference", `${model} must have its own reference photo`);
+  const photo = fs.readFileSync(path.join(__dirname, "../store/assets/devices", path.basename(device.image)));
+  assert.equal(photo.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+  assert.ok(photo.readUInt32BE(16) >= 400 && photo.readUInt32BE(20) >= 400);
+}
 assert.equal(offerMoney("10:799,90").value, 10799.9);
 assert.equal(offerMoney("2397,900").value, 2397.9);
 assert.equal(offerMoney("1979,0").value, 1979);
@@ -73,9 +82,10 @@ assert.deepEqual(rows.slice(6, 9).map(row => row.device.price), [7398.9, 7299.9,
 assert.equal(rows[9].device.previousPrice, null);
 assert.equal(rows[11].device.previousPrice, 8199.9);
 assert.equal(rows[11].device.price, 7798.9);
-assert.equal(rows[12].device.imageKind, "missing");
+assert.equal(rows[12].device.imageKind, "reference");
 assert.equal(rows[12].device.price, 10388.9);
-assert.match(rows[12].warning, /sem foto automatica/);
+assert.match(rows[12].device.image, /iphone-18-pro-max\.png$/);
+assert.equal(parseList("LACRADOS\nDe: 5000\niPhone 99 Pro 128GB\n4000")[0].device.imageKind, "missing");
 const incomplete = parseList("SEMINOVOS\nDe: 3500\n13 128GB\n2397,901");
 assert.equal(incomplete[0].device, null);
 assert.match(incomplete[0].warning, /Preco invalido/);
