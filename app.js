@@ -1689,7 +1689,7 @@ function reportsScreen() {
     <div class="grid metrics document-metrics">${metric("Vendas do dia", money.format(sales.reduce((sum, sale) => sum + Number(sale.total), 0)), `${sales.length} atendimento(s)`)}${metric("Descontos", money.format(sales.reduce((sum, sale) => sum + Number(sale.discount || 0), 0)), "somente vendas ativas")}${metric("Canceladas", data.sales.length - sales.length, "fora do total vendido")}${metric("Caixas fechados", closed.length, "somente neste dia")}</div></section>
     <div class="grid panel-grid report-grid"><section class="card"><h2>Vendas de ${period.split("-").reverse().join("/")}</h2>${reportSalesDetails(data.sales)}<h3 class="subhead">Sangrias e reforcos do dia</h3>${reportMovementTable(data.movements)}</section>
     <aside class="card"><h2>Pagamentos do dia</h2>${paymentSummaryCards(sales)}<div class="totals"><div><span>Troco devolvido</span><strong>${money.format(sales.reduce((sum, sale) => sum + saleChange(sale), 0))}</strong></div><div><span>Sangrias</span><strong>${money.format(data.movements.filter((movement) => isCashOut(movement) && !isSaleMovement(movement) && !isCancellationMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount), 0))}</strong></div><div><span>Reforcos</span><strong>${money.format(data.movements.filter((movement) => movement.type === "Entrada" && !isSaleMovement(movement)).reduce((sum, movement) => sum + Number(movement.amount), 0))}</strong></div></div>
-    ${canClose ? `<button class="btn danger" type="button" onclick="openModal('closeShift')">Fechar caixa deste dia</button>` : state.cash.open ? `<p>Caixa aberto em ${reportEscape(state.cash.shift.businessDate)}.</p><button class="btn" type="button" onclick="setUi('reportDate','${state.cash.shift.businessDate}')">Ver dia do caixa aberto</button>` : '<p>Sem caixa aberto.</p>'}</aside></div>
+    ${canClose ? `<div class="toolbar"><button class="btn primary" type="button" onclick="openModal('movement','withdrawal')">Registrar sangria</button><button class="btn" type="button" onclick="openModal('movement')">Registrar reforco</button><button class="btn danger" type="button" onclick="openModal('closeShift')">Fechar caixa deste dia</button></div>` : state.cash.open ? `<p>Caixa aberto em ${reportEscape(state.cash.shift.businessDate)}.</p><button class="btn" type="button" onclick="setUi('reportDate','${state.cash.shift.businessDate}')">Ver dia do caixa aberto</button>` : '<p>Sem caixa aberto.</p>'}</aside></div>
     <section class="card report-current-cash"><h2>Fechamentos de ${period.split("-").reverse().join("/")}</h2>${closedShiftsTable(closed)}</section>`;
 }
 
@@ -2481,8 +2481,8 @@ function operatorForm() {
 function movementForm() {
   return formShell("Movimento de caixa", "saveMovement(event)", `
     <div class="split">
-      <label>Tipo<select name="type"><option>Entrada</option><option>Saída</option></select></label>
-      <label>Valor<input name="amount" type="number" min="0" step="0.01" required /></label>
+      <label>Tipo<select name="type"><option value="Entrada">Reforco (entrada)</option><option value="Saída" ${modal?.id === "withdrawal" ? "selected" : ""}>Sangria (saida)</option></select></label>
+      <label>Valor<input name="amount" type="number" min="0.01" step="0.01" required /></label>
     </div>
     <label>Descrição<input name="description" required /></label>`);
 }

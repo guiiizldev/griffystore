@@ -1,6 +1,6 @@
 {
   "name": "griffy-store-desktop",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Sistema desktop da Griffy Store com PDV, estoque, assistencia tecnica e MySQL.",
   "author": "Griffy Store",
   "main": "src/electron/main.js",

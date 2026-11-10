@@ -9,6 +9,15 @@ for (const date of ["2026-02-29", "2026-04-31", "invalid", "2026-10-28' OR 1=1"]
 assert.equal(reportRange("month", "2026-13"), null);
 
 const source = fs.readFileSync("app.js", "utf8");
+const movementContext = vm.createContext({ modal: { id: "withdrawal" }, formShell: (_title, _handler, content) => content });
+vm.runInContext(source.slice(source.indexOf("function movementForm()"), source.indexOf("function openShiftFormLegacy()")), movementContext);
+assert.match(movementContext.movementForm(), /value="Saída" selected/);
+assert.match(movementContext.movementForm(), /min="0.01"/);
+movementContext.modal = { id: null };
+assert.doesNotMatch(movementContext.movementForm(), /value="Saída" selected/);
+const dailyScreen = source.slice(source.indexOf("function reportsScreen("), source.indexOf("function monthlyReportsScreen("));
+assert.match(dailyScreen, /canClose \? .*Registrar sangria/);
+assert.match(dailyScreen, /openModal\('movement','withdrawal'\)/);
 const context = vm.createContext({ state: { sales: [
   { id: "today", shiftId: "current", date: "2026-10-28", status: "active" },
   { id: "yesterday", shiftId: "previous", date: "2026-10-27", status: "active" },
