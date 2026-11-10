@@ -12,6 +12,9 @@ uma vez para ativar o download e a instalacao integrados. Nao e necessario
 apagar o banco nem as configuracoes do usuario.
 
 A pasta win-unpacked tambem e gerada atualizada e distribuida em ZIP.
+Sempre que atualizar o aplicativo desktop, atualizar tambem a pasta local
+`dist/win-unpacked` para os testes do usuario. Confirmar a versao empacotada
+e a presenca da correcao antes de informar que a pasta foi atualizada.
 Para atualizacoes integradas no Windows, prefira o instalador NSIS.
 Arquivos `.env` reais nao sao incluidos nos novos pacotes; a API padrao
 dos aplicativos empacotados e `https://griffystore.com.br/api`.
